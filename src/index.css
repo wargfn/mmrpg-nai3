@@ -1,0 +1,43 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  
+  h1, h2, h3, .font-comic {
+    font-family: 'Bangers', cursive, sans-serif;
+    letter-spacing: 0.05em;
+  }
+
+  code, pre, .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+}
+
+/* Comic halftone dot background effect */
+.comic-dots {
+  background-image: radial-gradient(rgba(226, 54, 54, 0.12) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+
+/* Comic action borders */
+.comic-panel {
+  border: 2px solid #334155;
+  box-shadow: 4px 4px 0px #0f172a;
+}
+
+.comic-panel-red {
+  border: 2px solid #ef4444;
+  box-shadow: 4px 4px 0px #7f1d1d;
+}
+
+.comic-panel-yellow {
+  border: 2px solid #eab308;
+  box-shadow: 4px 4px 0px #713f12;
+}
+
+.comic-panel-blue {
+  border: 2px solid #3b82f6;
+  box-shadow: 4px 4px 0px #1e3a8a;
+}

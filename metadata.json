@@ -1,0 +1,7 @@
+{
+  "name": "Marvel Multiverse Narrator AI",
+  "description": "Interactive AI Narrator & Game Master toolkit for Marvel Multiverse RPG with d616 dice engine, character roster, combat tracker, rules database, and campaign manager.",
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
