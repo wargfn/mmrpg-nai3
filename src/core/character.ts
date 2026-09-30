@@ -92,7 +92,7 @@ export class Character {
     this.max_focus = init.max_focus ?? Math.max(25, this.vigilance * 25);
     this.current_health = init.current_health ?? this.max_health;
     this.current_focus = init.current_focus ?? this.max_focus;
-    this.karma = init.karma ?? 0;
+    this.karma = init.karma !== undefined ? Math.max(0, init.karma) : Math.max(1, this.rank);
     this.conditions = Array.from(new Set(init.conditions || []));
   }
 
@@ -172,6 +172,22 @@ export class Character {
     return true;
   }
 
+  adjustKarma(delta: number): number {
+    this.karma = Math.max(0, this.karma + delta);
+    return this.karma;
+  }
+
+  setKarma(value: number): number {
+    this.karma = Math.max(0, value);
+    return this.karma;
+  }
+
+  spendKarma(amount = 1): boolean {
+    if (this.karma < amount) return false;
+    this.karma -= amount;
+    return true;
+  }
+
   heal(health = 0, focus = 0) {
     this.current_health = Math.min(this.max_health, this.current_health + health);
     this.current_focus = Math.min(this.max_focus, this.current_focus + focus);
@@ -179,6 +195,40 @@ export class Character {
       current_health: this.current_health,
       current_focus: this.current_focus,
     };
+  }
+
+  addCondition(condition: string): string[] {
+    const trimmed = condition.trim();
+    if (!trimmed) return [...this.conditions];
+    const exists = this.conditions.some(c => c.toLowerCase() === trimmed.toLowerCase());
+    if (!exists) {
+      this.conditions.push(trimmed);
+    }
+    return [...this.conditions];
+  }
+
+  removeCondition(condition: string): string[] {
+    const trimmed = condition.trim().toLowerCase();
+    this.conditions = this.conditions.filter(c => c.toLowerCase() !== trimmed);
+    return [...this.conditions];
+  }
+
+  toggleCondition(condition: string): { active: boolean; conditions: string[] } {
+    const trimmed = condition.trim();
+    if (!trimmed) return { active: false, conditions: [...this.conditions] };
+    const idx = this.conditions.findIndex(c => c.toLowerCase() === trimmed.toLowerCase());
+    if (idx >= 0) {
+      this.conditions.splice(idx, 1);
+      return { active: false, conditions: [...this.conditions] };
+    } else {
+      this.conditions.push(trimmed);
+      return { active: true, conditions: [...this.conditions] };
+    }
+  }
+
+  clearConditions(): string[] {
+    this.conditions = [];
+    return [];
   }
 
   toSheet(): CharacterSheet {
@@ -374,6 +424,20 @@ export class CharacterRoster {
       healthResult,
       focusResult,
     };
+  }
+
+  public adjustKarma(name: string, delta: number) {
+    const char = this.getCharacter(name);
+    if (!char) throw new Error(`Character '${name}' not found.`);
+    char.adjustKarma(delta);
+    return char.toSheet();
+  }
+
+  public setKarma(name: string, value: number) {
+    const char = this.getCharacter(name);
+    if (!char) throw new Error(`Character '${name}' not found.`);
+    char.setKarma(value);
+    return char.toSheet();
   }
 }
 

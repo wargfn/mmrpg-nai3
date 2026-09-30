@@ -1,13 +1,43 @@
+try {
+  process.loadEnvFile?.();
+} catch {}
+
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
-import { resolveD616Roll } from './src/core/d616.ts';
+
+// Resolve real Gemini API key if process.env contains a placeholder
+export function resolveGeminiKey(): string {
+  let key = process.env.GEMINI_API_KEY || process.env.API_KEY || '';
+  if (!key || key.startsWith('MY_')) {
+    try {
+      if (fs.existsSync('.env')) {
+        const content = fs.readFileSync('.env', 'utf-8');
+        for (const line of content.split('\n')) {
+          const [k, ...rest] = line.split('=');
+          if (k.trim() === 'GEMINI_API_KEY' && rest.length > 0) {
+            const val = rest.join('=').trim().replace(/^["']|["']$/g, '');
+            if (val && !val.startsWith('MY_')) {
+              key = val;
+              process.env.GEMINI_API_KEY = val;
+              break;
+            }
+          }
+        }
+      }
+    } catch {}
+  }
+  return key;
+}
+
+resolveGeminiKey();
+import { resolveD616Roll, buildD616Result } from './src/core/d616.ts';
 import { rulesDatabase } from './src/core/rules.ts';
 import { characterRoster, Character } from './src/core/character.ts';
 import { combatTracker } from './src/core/combat.ts';
 import { campaignManager } from './src/core/campaign.ts';
-import { narratorEngine } from './src/core/narrator.ts';
+import { narratorEngine, AVAILABLE_MODELS, NARRATOR_ROLES } from './src/core/narrator.ts';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -51,6 +81,11 @@ app.get('/api/rules/search', (req: Request, res: Response) => {
   res.json(results);
 });
 
+app.get('/api/rules/index', (_req: Request, res: Response) => {
+  const index = rulesDatabase.getRulesIndex();
+  res.json(index);
+});
+
 // ----------------------------------------------------
 // 3. Character Roster & Creation APIs
 // ----------------------------------------------------
@@ -87,9 +122,179 @@ app.post('/api/characters/assisted', (req: Request, res: Response) => {
 app.post('/api/characters/:name/damage', (req: Request, res: Response) => {
   try {
     const name = Array.isArray(req.params.name) ? req.params.name[0] : req.params.name;
-    const { health_damage = 0, focus_damage = 0 } = req.body;
-    const result = characterRoster.applyDamage(name, Number(health_damage), Number(focus_damage));
+    const { health_damage = 0, focus_damage = 0, source = 'Manual Adjustment' } = req.body;
+    let result;
+    try {
+      result = combatTracker.applyDamage(name, Number(health_damage), Number(focus_damage), source);
+    } catch {
+      result = characterRoster.applyDamage(name, Number(health_damage), Number(focus_damage));
+    }
     res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/characters/:name/karma', (req: Request, res: Response) => {
+  try {
+    const name = Array.isArray(req.params.name) ? req.params.name[0] : req.params.name;
+    const { delta, value } = req.body;
+    const char = characterRoster.getCharacter(name);
+    if (!char) return res.status(404).json({ error: `Character '${name}' not found` });
+
+    if (value !== undefined) {
+      char.setKarma(Number(value));
+    } else if (delta !== undefined) {
+      char.adjustKarma(Number(delta));
+    }
+
+    res.json({ character: char.toSheet() });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/characters/:name/karma/spend', (req: Request, res: Response) => {
+  try {
+    const name = Array.isArray(req.params.name) ? req.params.name[0] : req.params.name;
+    const char = characterRoster.getCharacter(name);
+    if (!char) return res.status(404).json({ error: `Character '${name}' not found` });
+
+    const { actionType, amount = 1, currentRoll, bonus } = req.body;
+    if (char.karma < amount) {
+      return res.status(400).json({
+        error: `Insufficient Karma points. ${char.name} has ${char.karma} Karma, needs ${amount}.`,
+      });
+    }
+
+    // Deduct karma
+    char.spendKarma(amount);
+
+    let rollResult: any = null;
+    let description = '';
+
+    // Extract existing dice values if present
+    const existingS1 = currentRoll?.raw_dice?.standard_1 ?? (Array.isArray(currentRoll?.dice_values) ? currentRoll.dice_values[0] : (Math.floor(Math.random() * 6) + 1));
+    const existingM = currentRoll?.raw_dice?.marvel_die ?? (Array.isArray(currentRoll?.dice_values) ? currentRoll.dice_values[1] : (Math.floor(Math.random() * 6) + 1));
+    const existingS2 = currentRoll?.raw_dice?.standard_2 ?? (Array.isArray(currentRoll?.dice_values) ? currentRoll.dice_values[2] : (Math.floor(Math.random() * 6) + 1));
+    const mod = currentRoll?.ability_modifier ?? char.melee;
+    const tn = currentRoll?.target_number ?? null;
+
+    if (actionType === 'reroll_marvel') {
+      const s1 = existingS1;
+      const s2 = existingS2;
+      const newMarvel = Math.floor(Math.random() * 6) + 1;
+
+      rollResult = buildD616Result({
+        standard_1: s1,
+        marvel_die: newMarvel,
+        standard_2: s2,
+        ability_modifier: mod,
+        target_number: tn,
+      });
+
+      description = `${char.name} spent 1 Karma to reroll the Marvel Die! New dice: [${s1}, ${newMarvel === 1 ? 'M (counts as 6)' : newMarvel}, ${s2}] + ${mod} = ${rollResult.total_score}${rollResult.is_fantastic ? ' ⭐ (Fantastic Outcome!)' : ''}${tn ? ` vs TN ${tn} (${rollResult.success ? 'Success' : 'Failed'})` : ''}.`;
+    } else if (actionType === 'reroll_lowest') {
+      let s1 = existingS1;
+      const m = existingM;
+      let s2 = existingS2;
+      const newD6 = Math.floor(Math.random() * 6) + 1;
+
+      if (s1 <= s2) {
+        s1 = newD6;
+      } else {
+        s2 = newD6;
+      }
+
+      rollResult = buildD616Result({
+        standard_1: s1,
+        marvel_die: m,
+        standard_2: s2,
+        ability_modifier: mod,
+        target_number: tn,
+      });
+
+      description = `${char.name} spent 1 Karma to reroll the lowest standard die! New pool: [${s1}, ${m === 1 ? 'M (counts as 6)' : m}, ${s2}] + ${mod} = ${rollResult.total_score}${tn ? ` vs TN ${tn} (${rollResult.success ? 'Success' : 'Failed'})` : ''}.`;
+    } else if (actionType === 'reroll_die_1') {
+      const s1 = Math.floor(Math.random() * 6) + 1;
+      const m = existingM;
+      const s2 = existingS2;
+
+      rollResult = buildD616Result({
+        standard_1: s1,
+        marvel_die: m,
+        standard_2: s2,
+        ability_modifier: mod,
+        target_number: tn,
+      });
+
+      description = `${char.name} spent 1 Karma to reroll Standard Die 1! New pool: [${s1}, ${m === 1 ? 'M (counts as 6)' : m}, ${s2}] + ${mod} = ${rollResult.total_score}${tn ? ` vs TN ${tn} (${rollResult.success ? 'Success' : 'Failed'})` : ''}.`;
+    } else if (actionType === 'reroll_die_2') {
+      const s1 = existingS1;
+      const m = existingM;
+      const s2 = Math.floor(Math.random() * 6) + 1;
+
+      rollResult = buildD616Result({
+        standard_1: s1,
+        marvel_die: m,
+        standard_2: s2,
+        ability_modifier: mod,
+        target_number: tn,
+      });
+
+      description = `${char.name} spent 1 Karma to reroll Standard Die 2! New pool: [${s1}, ${m === 1 ? 'M (counts as 6)' : m}, ${s2}] + ${mod} = ${rollResult.total_score}${tn ? ` vs TN ${tn} (${rollResult.success ? 'Success' : 'Failed'})` : ''}.`;
+    } else if (actionType === 'reroll_all') {
+      rollResult = resolveD616Roll({
+        ability_modifier: mod,
+        target_number: tn,
+      });
+      description = `${char.name} spent 1 Karma for a full d616 pool reroll! Total: ${rollResult.total_score}${rollResult.is_fantastic ? ' ⭐ (Fantastic Outcome!)' : ''}${tn ? ` vs TN ${tn} (${rollResult.success ? 'Success' : 'Failed'})` : ''}.`;
+    } else if (actionType === 'adjust_score') {
+      const adjustment = bonus !== undefined ? Number(bonus) : char.rank;
+      const s1 = existingS1;
+      const m = existingM;
+      const s2 = existingS2;
+      const baseMod = mod;
+      const effectiveTn = tn ?? 15;
+      const newMod = baseMod + adjustment;
+
+      rollResult = buildD616Result({
+        standard_1: s1,
+        marvel_die: m,
+        standard_2: s2,
+        ability_modifier: newMod,
+        target_number: effectiveTn,
+      });
+
+      description = `${char.name} spent 1 Karma for an Outcome Adjustment (+${adjustment} Karma Bonus to Total Score)! Score increased to ${rollResult.total_score}${effectiveTn ? ` vs TN ${effectiveTn} (${rollResult.success ? 'SUCCESS!' : 'FAILED'})` : ''}.`;
+    } else if (actionType === 'gain_edge') {
+      description = `${char.name} spent 1 Karma to gain a tactical Edge (+1 Edge on next action check)!`;
+    } else {
+      description = `${char.name} spent ${amount} Karma.`;
+    }
+
+    // Add comic event message to narrator chat
+    try {
+      narratorEngine.addMessage({
+        role: 'system',
+        content: `⭐ **KARMA SPENT by ${char.name}** (${char.karma} Karma remaining)\n${description}`,
+        metadata: {
+          type: 'dice_roll',
+          diceResult: rollResult,
+          karmaAction: actionType,
+        },
+      });
+    } catch (e) {
+      console.error('Could not log karma message to narrator:', e);
+    }
+
+    res.json({
+      character: char.toSheet(),
+      rollResult,
+      actionDescription: description,
+      remainingKarma: char.karma,
+      messages: narratorEngine.getMessages(),
+    });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
@@ -135,6 +340,160 @@ app.post('/api/combat/clear', (_req: Request, res: Response) => {
   res.json({ message: 'Combat state cleared' });
 });
 
+app.get('/api/combat/history', (_req: Request, res: Response) => {
+  res.json({ history: combatTracker.getDamageHistory() });
+});
+
+app.post('/api/combat/history/clear', (_req: Request, res: Response) => {
+  combatTracker.clearDamageHistory();
+  res.json({ history: [] });
+});
+
+// Initiative & Turn Tracker endpoints
+app.post('/api/combat/initiative/roll', (req: Request, res: Response) => {
+  try {
+    const { name, edges = 0, troubles = 0 } = req.body || {};
+    if (name) {
+      combatTracker.rollInitiative(name, Number(edges), Number(troubles));
+    } else {
+      combatTracker.rollAllInitiatives(true);
+    }
+    res.json(combatTracker.getCombatState());
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/combat/initiative/set', (req: Request, res: Response) => {
+  try {
+    const { name, initiative } = req.body;
+    if (!name) return res.status(400).json({ error: 'Combatant name is required' });
+    combatTracker.setInitiative(name, initiative != null ? Number(initiative) : null);
+    res.json(combatTracker.getCombatState());
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/combat/initiative/sort', (_req: Request, res: Response) => {
+  try {
+    combatTracker.sortByInitiative();
+    res.json(combatTracker.getCombatState());
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/combat/initiative/move', (req: Request, res: Response) => {
+  try {
+    const { name, direction } = req.body;
+    if (!name || (direction !== 'up' && direction !== 'down')) {
+      return res.status(400).json({ error: 'Valid name and direction (up/down) required' });
+    }
+    combatTracker.moveCombatant(name, direction);
+    res.json(combatTracker.getCombatState());
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/combat/initiative/reorder', (req: Request, res: Response) => {
+  try {
+    const { ordered_names } = req.body;
+    if (!Array.isArray(ordered_names)) {
+      return res.status(400).json({ error: 'ordered_names array required' });
+    }
+    combatTracker.reorderCombatants(ordered_names);
+    res.json(combatTracker.getCombatState());
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/combat/turn/next', (_req: Request, res: Response) => {
+  try {
+    res.json(combatTracker.nextTurn());
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/combat/turn/prev', (_req: Request, res: Response) => {
+  try {
+    res.json(combatTracker.prevTurn());
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/combat/turn/set', (req: Request, res: Response) => {
+  try {
+    const { index, name } = req.body;
+    if (index !== undefined) {
+      res.json(combatTracker.setTurn(Number(index)));
+    } else if (name) {
+      res.json(combatTracker.setTurn(String(name)));
+    } else {
+      res.status(400).json({ error: 'index or name is required' });
+    }
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/combat/initiative/reset', (_req: Request, res: Response) => {
+  try {
+    res.json(combatTracker.resetInitiative());
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Combatant Condition Endpoints
+app.post('/api/combat/condition/add', (req: Request, res: Response) => {
+  try {
+    const { name, condition } = req.body;
+    if (!name || !condition) return res.status(400).json({ error: 'Combatant name and condition are required' });
+    const state = combatTracker.addCondition(name, condition);
+    res.json(state);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/combat/condition/remove', (req: Request, res: Response) => {
+  try {
+    const { name, condition } = req.body;
+    if (!name || !condition) return res.status(400).json({ error: 'Combatant name and condition are required' });
+    const state = combatTracker.removeCondition(name, condition);
+    res.json(state);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/combat/condition/toggle', (req: Request, res: Response) => {
+  try {
+    const { name, condition } = req.body;
+    if (!name || !condition) return res.status(400).json({ error: 'Combatant name and condition are required' });
+    const state = combatTracker.toggleCondition(name, condition);
+    res.json(state);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/combat/condition/clear', (req: Request, res: Response) => {
+  try {
+    const { name } = req.body;
+    if (!name) return res.status(400).json({ error: 'Combatant name is required' });
+    const state = combatTracker.clearConditions(name);
+    res.json(state);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // ----------------------------------------------------
 // 5. Campaign & Memory APIs
 // ----------------------------------------------------
@@ -166,6 +525,83 @@ app.post('/api/campaign/event', (req: Request, res: Response) => {
   }
 });
 
+app.get('/api/campaign/event-log/download', (_req: Request, res: Response) => {
+  try {
+    const plan = campaignManager.getPlan();
+    const eventLog = campaignManager.getEventLog();
+    const memories = campaignManager.searchMemories('');
+
+    const lines: string[] = [
+      '================================================================================',
+      'MARVEL MULTIVERSE ROLE-PLAYING GAME - CAMPAIGN EVENT LOG & PLOT CHRONOLOGY',
+      '================================================================================',
+      `Campaign Title:   ${plan?.theme || 'Marvel Campaign'}`,
+      `Supervillain:     ${plan?.villain || 'Unknown Villain'}`,
+      `Hero Team:        ${plan?.hero_team?.join(', ') || 'Avengers & Allies'}`,
+      `Current Session:  Episode ${plan?.current_session || 1} of ${plan?.sessions?.length || 1}`,
+      `Generated On:     ${new Date().toLocaleString()}`,
+      `Total Events:     ${eventLog.length} recorded event(s)`,
+      '================================================================================',
+      '',
+      '--- SESSIONS ROADMAP ---',
+    ];
+
+    if (plan?.sessions && plan.sessions.length > 0) {
+      plan.sessions.forEach((s) => {
+        lines.push(`[Session ${s.session_number}] ${s.title} (${s.status.toUpperCase()})`);
+        lines.push(`  Act:           ${s.act}`);
+        lines.push(`  Objective:     ${s.primary_objective}`);
+        lines.push(`  Briefing:      ${s.briefing}`);
+        if (s.complications?.length) {
+          lines.push(`  Complications: ${s.complications.join('; ')}`);
+        }
+        if (s.key_encounters?.length) {
+          lines.push(`  Encounters:    ${s.key_encounters.join('; ')}`);
+        }
+        lines.push('');
+      });
+    } else {
+      lines.push('No sessions planned yet.\n');
+    }
+
+    if (memories.length > 0) {
+      lines.push('--- CAMPAIGN LORE & MEMORIES ---');
+      memories.forEach((m) => {
+        lines.push(`• [${m.category.toUpperCase()}] ${m.title}: ${m.details}`);
+      });
+      lines.push('');
+    }
+
+    lines.push('--- CHRONOLOGICAL EVENT LOG ---');
+    if (eventLog.length > 0) {
+      eventLog.forEach((event, idx) => {
+        lines.push(`[${idx + 1}] ${event}`);
+      });
+    } else {
+      lines.push('No events recorded yet.');
+    }
+
+    lines.push('');
+    lines.push('================================================================================');
+    lines.push('END OF CAMPAIGN RECORD');
+    lines.push('================================================================================');
+
+    const fileContent = lines.join('\n');
+    const safeTitle = (plan?.theme || 'marvel-campaign')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '');
+    const filename = `${safeTitle}-event-log-${new Date().toISOString().slice(0, 10)}.txt`;
+
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+    res.send(fileContent);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/campaign/conclude', (req: Request, res: Response) => {
   try {
     const { session_number, log_summary } = req.body;
@@ -179,24 +615,67 @@ app.post('/api/campaign/conclude', (req: Request, res: Response) => {
 // ----------------------------------------------------
 // 6. Interactive Narrator AI APIs
 // ----------------------------------------------------
+app.get('/api/narrator/config', (_req: Request, res: Response) => {
+  res.json({
+    activeModel: narratorEngine.getModel(),
+    availableModels: AVAILABLE_MODELS,
+    activeRole: narratorEngine.getRole(),
+    availableRoles: Object.values(NARRATOR_ROLES),
+    activeCharacter: narratorEngine.getActiveCharacter(),
+  });
+});
+
+app.post('/api/narrator/config', (req: Request, res: Response) => {
+  try {
+    const { model, role } = req.body;
+    if (model) narratorEngine.setModel(model);
+    if (role) narratorEngine.setRole(role);
+    res.json({
+      activeModel: narratorEngine.getModel(),
+      activeRole: narratorEngine.getRole(),
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 app.get('/api/narrator/messages', (_req: Request, res: Response) => {
   res.json({
     messages: narratorEngine.getMessages(),
     activeCharacter: narratorEngine.getActiveCharacter(),
+    activeModel: narratorEngine.getModel(),
+    activeRole: narratorEngine.getRole(),
   });
 });
 
 app.post('/api/narrate', async (req: Request, res: Response) => {
   try {
-    const { message } = req.body;
+    const { message, model, role } = req.body;
     if (!message || typeof message !== 'string') {
       return res.status(400).json({ error: 'Message text is required' });
     }
-    const reply = await narratorEngine.handleInput(message);
+    const reply = await narratorEngine.handleInput(message, { model, role });
     res.json({
       reply,
       messages: narratorEngine.getMessages(),
       activeCharacter: narratorEngine.getActiveCharacter(),
+      activeModel: narratorEngine.getModel(),
+      activeRole: narratorEngine.getRole(),
+      combatState: combatTracker.getCombatState(),
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/narrator/report-roll', async (req: Request, res: Response) => {
+  try {
+    const result = await narratorEngine.rollAndReport(req.body);
+    res.json({
+      ...result,
+      activeCharacter: narratorEngine.getActiveCharacter(),
+      activeModel: narratorEngine.getModel(),
+      activeRole: narratorEngine.getRole(),
       combatState: combatTracker.getCombatState(),
     });
   } catch (err: any) {

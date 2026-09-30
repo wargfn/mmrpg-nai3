@@ -171,6 +171,88 @@ class RulesDatabaseService {
   public getMechanics(): Record<string, MechanicEntry> {
     return this.data.mechanics || {};
   }
+
+  public getRulesIndex() {
+    const mechanics = Object.entries<any>(this.data.mechanics || {}).map(([key, item]) => ({
+      key,
+      title: String(item.title || key),
+      category: String(item.category || 'Core Mechanics'),
+      description: String(item.description || ''),
+      formula: item.formula || null,
+      examples: Array.isArray(item.examples) ? item.examples : [],
+    }));
+
+    const powerSets = (this.data.power_sets || []).map((ps: any) => ({
+      name: String(ps.name || 'Power Set').trim(),
+      description: String(ps.description || ''),
+      power_count: (ps.powers || []).length,
+      powers: (ps.powers || []).map((p: any) => ({
+        name: String(p.name || ''),
+        category: String(ps.name || 'Power Set').trim(),
+        rank_required: p.rank_required ?? 1,
+        description: String(p.description || p.summary || ''),
+        action: p.action,
+        cost: p.cost,
+        range: p.range,
+        duration: p.duration,
+        prerequisites: p.prerequisites,
+      })),
+    }));
+
+    const standalonePowers = (this.data.powers || []).map((p: any) => ({
+      name: String(p.name || ''),
+      category: String(p.category || 'General'),
+      rank_required: p.rank_required ?? 1,
+      description: String(p.description || p.summary || ''),
+      action: p.action,
+      cost: p.cost,
+      range: p.range,
+    }));
+
+    const origins = (this.data.origins || []).map((o: any) => ({
+      name: String(o.name || ''),
+      description: String(o.description || ''),
+      subcategories: Array.isArray(o.subcategories) ? o.subcategories : [],
+      aliases: Array.isArray(o.aliases) ? o.aliases : [],
+    }));
+
+    const occupations = (this.data.occupations || []).map((occ: any) => ({
+      name: String(occ.name || ''),
+      description: String(occ.description || ''),
+      examples: Array.isArray(occ.examples) ? occ.examples : [],
+      traits: Array.isArray(occ.traits) ? occ.traits : [],
+      tags: Array.isArray(occ.tags) ? occ.tags : [],
+    }));
+
+    const traits = (this.data.traits || []).map((t: any) => ({
+      name: String(t.name || ''),
+      description: String(t.description || ''),
+    }));
+
+    const tags = (this.data.tags || []).map((t: any) => ({
+      name: String(t.name || ''),
+      description: String(t.description || ''),
+    }));
+
+    return {
+      stats: {
+        total_mechanics: mechanics.length,
+        total_power_sets: powerSets.length,
+        total_powers: this.powerEntries.length,
+        total_origins: origins.length,
+        total_occupations: occupations.length,
+        total_traits: traits.length,
+        total_tags: tags.length,
+      },
+      mechanics,
+      power_sets: powerSets,
+      standalone_powers: standalonePowers,
+      origins,
+      occupations,
+      traits,
+      tags,
+    };
+  }
 }
 
 export const rulesDatabase = new RulesDatabaseService();

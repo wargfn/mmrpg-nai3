@@ -203,3 +203,44 @@ export function rollD616Simple(edge = false, trouble = false, target_number?: nu
     target_number,
   });
 }
+
+export function buildD616Result(options: {
+  standard_1: number;
+  marvel_die: number;
+  standard_2: number;
+  ability_modifier?: number;
+  target_number?: number | null;
+  history?: any;
+}): D616RollResult {
+  const { standard_1, marvel_die, standard_2, ability_modifier = 0, target_number = null } = options;
+  const is_botch = standard_1 === 1 && marvel_die === 1 && standard_2 === 1;
+  const is_ultimate = standard_1 === 6 && marvel_die === 1 && standard_2 === 6;
+  const is_fantastic = marvel_die === 1 && !is_botch;
+  const marvelScore = marvel_die === 1 ? 6 : marvel_die;
+  const total = standard_1 + marvelScore + standard_2 + ability_modifier;
+
+  let success: boolean | undefined = undefined;
+  if (target_number !== null) {
+    if (is_botch) success = false;
+    else if (is_ultimate) success = true;
+    else success = total >= target_number;
+  }
+
+  return {
+    raw_dice: { standard_1, marvel_die, standard_2 },
+    dice_values: [standard_1, marvel_die, standard_2],
+    ability_modifier,
+    total_score: total,
+    is_fantastic,
+    is_ultimate,
+    is_botch,
+    target_number,
+    success,
+    net_modifiers: 0,
+    roll_history: options.history || {
+      standard_1: [standard_1],
+      marvel_die: [marvel_die],
+      standard_2: [standard_2],
+    },
+  };
+}
