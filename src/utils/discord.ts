@@ -1,14 +1,12 @@
 /// <reference types="vite/client" />
-import { DiscordSDK } from '@discord/embedded-app-sdk';
 
-// Replace with your Discord Application Client ID or configure VITE_DISCORD_CLIENT_ID environment variable
-const DISCORD_CLIENT_ID = import.meta.env.VITE_DISCORD_CLIENT_ID || '123456789012345678';
+const DISCORD_CLIENT_ID = import.meta.env.VITE_DISCORD_CLIENT_ID || '';
 
-let discordSdkInstance: DiscordSDK | null = null;
+let discordSdkInstance: any = null;
 let discordUser: { username: string; globalName?: string; avatar?: string; id: string } | null = null;
 let isDiscordActivity = false;
 
-export function getDiscordSdk(): DiscordSDK | null {
+export function getDiscordSdk(): any {
   return discordSdkInstance;
 }
 
@@ -20,18 +18,21 @@ export function checkIsDiscordActivity(): boolean {
   return isDiscordActivity;
 }
 
-export async function initializeDiscordSdk(): Promise<{ discordSdk: DiscordSDK | null; user: typeof discordUser }> {
-  // Check if we are running inside Discord Activity iframe (URL contains instance_id or frame_id)
-  const urlParams = new URLSearchParams(window.location.search);
-  const isFrame = urlParams.has('frame_id') || urlParams.has('instance_id') || window.location.hostname.includes('discordsays.com');
-  
-  if (!isFrame && !import.meta.env.VITE_FORCE_DISCORD) {
-    console.log('Running in standard browser mode (not Discord Activity).');
-    return { discordSdk: null, user: null };
-  }
-
+export async function initializeDiscordSdk(): Promise<{ discordSdk: any | null; user: typeof discordUser }> {
   try {
+    // Check if we are running inside Discord Activity iframe (URL contains instance_id or frame_id)
+    const urlParams = new URLSearchParams(window.location.search);
+    const isFrame = urlParams.has('frame_id') || urlParams.has('instance_id') || window.location.hostname.includes('discordsays.com');
+    
+    // Strict detection: If Discord client ID is missing/placeholder or we are not in a Discord frame and not forcing, skip Discord entirely.
+    const hasValidClientId = DISCORD_CLIENT_ID && DISCORD_CLIENT_ID !== '123456789012345678';
+    if ((!isFrame && !import.meta.env.VITE_FORCE_DISCORD) || !hasValidClientId) {
+      console.log('Running in standard browser preview mode (Discord Activity modules bypassed).');
+      return { discordSdk: null, user: null };
+    }
+
     isDiscordActivity = true;
+    const { DiscordSDK } = await import('@discord/embedded-app-sdk');
     discordSdkInstance = new DiscordSDK(DISCORD_CLIENT_ID);
     
     await discordSdkInstance.ready();
@@ -46,7 +47,6 @@ export async function initializeDiscordSdk(): Promise<{ discordSdk: DiscordSDK |
       scope: ['identify', 'guilds'],
     });
 
-    // Exchange auth code for session token via backend endpoint if available
     const response = await fetch('/api/discord/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -64,13 +64,9 @@ export async function initializeDiscordSdk(): Promise<{ discordSdk: DiscordSDK |
           avatar: auth.user.avatar ? `https://cdn.discordapp.com/avatars/${auth.user.id}/${auth.user.avatar}.png` : undefined,
         };
       }
-    } else {
-      // Fallback: get current channel or basic instance info
-      const channelId = discordSdkInstance.channelId;
-      console.log('Discord Channel ID:', channelId);
     }
   } catch (error) {
-    console.warn('Failed to initialize Discord SDK (running standalone or missing client config):', error);
+    console.warn('Failed to initialize Discord SDK:', error);
   }
 
   return { discordSdk: discordSdkInstance, user: discordUser };
