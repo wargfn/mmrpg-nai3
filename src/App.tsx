@@ -41,6 +41,7 @@ import {
   Activity,
 } from 'lucide-react';
 import { STANDARD_CONDITIONS } from './core/combat.ts';
+import { initializeDiscordSdk } from './utils/discord.ts';
 
 interface ChatMessage {
   id: string;
@@ -193,9 +194,15 @@ export default function App() {
   const [showKarmaRulesGuide, setShowKarmaRulesGuide] = useState(false);
   const [isKarmaExpanded, setIsKarmaExpanded] = useState(true);
   const [showMobileHeroModal, setShowMobileHeroModal] = useState(false);
+  const [discordUser, setDiscordUser] = useState<any>(null);
 
   // Load initial data
   useEffect(() => {
+    initializeDiscordSdk().then(({ user }) => {
+      if (user) {
+        setDiscordUser(user);
+      }
+    });
     fetchMessages();
     fetchCharacters();
     fetchCombat();

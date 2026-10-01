@@ -754,6 +754,49 @@ app.post('/api/mcp/call', (req: Request, res: Response) => {
 });
 
 // ----------------------------------------------------
+// Discord Activity Token Exchange Endpoint
+// ----------------------------------------------------
+app.post('/api/discord/token', async (req: Request, res: Response) => {
+  try {
+    const { code } = req.body;
+    if (!code) {
+      return res.status(400).json({ error: 'Missing code' });
+    }
+
+    const clientId = process.env.DISCORD_CLIENT_ID || process.env.VITE_DISCORD_CLIENT_ID;
+    const clientSecret = process.env.DISCORD_CLIENT_SECRET;
+
+    if (!clientId || !clientSecret) {
+      // Development fallback or mock token response
+      return res.json({ access_token: 'mock_discord_access_token' });
+    }
+
+    const response = await fetch(`https://discord.com/api/oauth2/token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        grant_type: 'authorization_code',
+        code: code,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return res.status(response.status).json({ error: errorText });
+    }
+
+    const data = await response.json();
+    return res.json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ----------------------------------------------------
 // 8. Vite Middleware or Static Assets
 // ----------------------------------------------------
 async function startServer() {

@@ -9,6 +9,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@discord/embedded-app-sdk": "^2.5.0",
     "@google/genai": "latest",
     "@tailwindcss/vite": "^4.0.9",
     "cors": "^2.8.5",
