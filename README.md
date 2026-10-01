@@ -34,13 +34,55 @@ To run Marvel Multiverse Narrator AI locally on your machine, follow these steps
    npm install
    ```
 
-3. **Start the development server:**
+3. **Configure Environment Variables:**
+   Copy `.env.example` to `.env`:
+   ```bash
+   cp .env.example .env
+   ```
+   Open `.env` and set your configuration variables (see [Environment Configuration](#environment-configuration) below).
+
+4. **Start the development server:**
    ```bash
    npm run dev
    ```
 
-4. **Open in your browser:**
+5. **Open in your browser:**
    Navigate to `http://localhost:3000` (or the local URL provided in your terminal).
+
+---
+
+## Environment Configuration
+
+The application uses environment variables for server configuration, server-side API proxying, and AI model selection.
+
+### Environment Variables
+- `PORT`: The port number on which the Express server listens (default: `3000`).
+- `GEMINI_API_KEY`: Your Google Gemini API key used by the backend AI Narrator engine.
+- `NARRATOR_MODEL`: The Gemini model identifier to use for AI narration (default: `gemini-2.5-flash`).
+
+### Development Setup
+For local development, create a `.env` file in the root directory:
+```env
+PORT=3000
+GEMINI_API_KEY=your_gemini_api_key_here
+NARRATOR_MODEL=gemini-2.5-flash
+```
+When running `npm run dev`, Vite and the Express server automatically load these variables.
+
+### Production Setup
+For production deployments (e.g., Node.js servers, Docker, or cloud platforms like Cloud Run):
+1. Set the environment variables directly in your hosting platform's environment settings or secrets manager:
+   - `PORT=3000` (or your hosting provider's assigned port)
+   - `GEMINI_API_KEY=your_production_gemini_api_key`
+   - `NARRATOR_MODEL=gemini-2.5-flash`
+2. Build the application:
+   ```bash
+   npm run build
+   ```
+3. Start the production server:
+   ```bash
+   npm start
+   ```
 
 ---
 
