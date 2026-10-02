@@ -42,6 +42,7 @@ import {
 } from 'lucide-react';
 import { STANDARD_CONDITIONS } from './core/combat.ts';
 import { initializeDiscordSdk } from './utils/discord.ts';
+import { LoginScreen } from './components/LoginScreen.tsx';
 
 interface ChatMessage {
   id: string;
@@ -102,6 +103,14 @@ interface CombatantSnapshot {
 }
 
 export default function App() {
+  const [currentUser, setCurrentUser] = useState<{ username: string; role: string } | null>(() => {
+    try {
+      const saved = localStorage.getItem('marvel_multiverse_user');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
   const [activeTab, setActiveTab] = useState<'narrator' | 'dice' | 'combat' | 'characters' | 'rules' | 'campaign'>('narrator');
 
   // Narrator state
@@ -113,6 +122,7 @@ export default function App() {
   const [showContext, setShowContext] = useState(false);
   const [selectedModel, setSelectedModel] = useState<string>('gemini-3.5-flash');
   const [selectedRole, setSelectedRole] = useState<string>('stan_lee');
+  const [narratorFontSize, setNarratorFontSize] = useState<'xs' | 'sm' | 'base' | 'lg'>('sm');
   const [availableModels, setAvailableModels] = useState<any[]>([
     { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', badge: 'General Tasks', desc: 'Balanced & responsive' },
     { id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash Lite', badge: 'Fast Tasks', desc: 'Ultra-fast reactions' },
@@ -195,6 +205,17 @@ export default function App() {
   const [isKarmaExpanded, setIsKarmaExpanded] = useState(true);
   const [showMobileHeroModal, setShowMobileHeroModal] = useState(false);
   const [discordUser, setDiscordUser] = useState<any>(null);
+
+  if (!currentUser) {
+    return (
+      <LoginScreen
+        onLogin={(user) => {
+          setCurrentUser(user);
+          localStorage.setItem('marvel_multiverse_user', JSON.stringify(user));
+        }}
+      />
+    );
+  }
 
   // Load initial data
   useEffect(() => {
@@ -1721,6 +1742,30 @@ export default function App() {
           </div>
         </div>
 
+        {/* User Account Badge */}
+        <div className="flex items-center gap-2">
+          {currentUser && (
+            <div className="hidden sm:flex items-center gap-2 bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-lg text-xs">
+              <span className="text-slate-400">User:</span>
+              <span className="text-yellow-400 font-bold font-mono">{currentUser.username}</span>
+              <span className="text-[10px] bg-red-950 text-red-300 px-1.5 py-0.5 rounded font-mono uppercase">
+                {currentUser.role}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setCurrentUser(null);
+                  localStorage.removeItem('marvel_multiverse_user');
+                }}
+                className="text-slate-400 hover:text-red-400 ml-1 font-mono text-[11px] underline cursor-pointer"
+                title="Log out"
+              >
+                Logout
+              </button>
+            </div>
+          )}
+        </div>
+
         {/* Hero Quick Badge */}
         {activeChar && (
           <div className="flex items-center gap-2">
@@ -1899,7 +1944,44 @@ export default function App() {
                 </div>
 
                 {/* Quick actions & Toggles */}
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {/* Text Size Adjuster */}
+                  <div className="flex items-center gap-1 bg-slate-950 border border-slate-700 px-2 py-1 rounded-lg">
+                    <span className="text-[10px] uppercase font-bold text-slate-400">Text Size:</span>
+                    <button
+                      type="button"
+                      onClick={() => setNarratorFontSize('xs')}
+                      className={`px-1.5 py-0.5 rounded text-[11px] font-mono font-bold transition ${narratorFontSize === 'xs' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                      title="Small Text (12px)"
+                    >
+                      S
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNarratorFontSize('sm')}
+                      className={`px-1.5 py-0.5 rounded text-[11px] font-mono font-bold transition ${narratorFontSize === 'sm' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                      title="Medium Text (14px)"
+                    >
+                      M
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNarratorFontSize('base')}
+                      className={`px-1.5 py-0.5 rounded text-[11px] font-mono font-bold transition ${narratorFontSize === 'base' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                      title="Large Text (16px)"
+                    >
+                      L
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNarratorFontSize('lg')}
+                      className={`px-1.5 py-0.5 rounded text-[11px] font-mono font-bold transition ${narratorFontSize === 'lg' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                      title="Extra Large Text (18px)"
+                    >
+                      XL
+                    </button>
+                  </div>
+
                   <button
                     onClick={handleDownloadEventLog}
                     disabled={isDownloadingLog}
@@ -1996,7 +2078,15 @@ Campaign: ${campaignData?.plan?.theme || 'The Midnight Syndicate Invasion'} (Vil
                     </div>
 
                     <div
-                      className={`max-w-[85%] rounded-xl p-4 shadow-lg text-sm leading-relaxed ${
+                      className={`max-w-[85%] rounded-xl p-4 shadow-lg leading-relaxed ${
+                        narratorFontSize === 'xs'
+                          ? 'text-xs'
+                          : narratorFontSize === 'sm'
+                          ? 'text-sm'
+                          : narratorFontSize === 'base'
+                          ? 'text-base'
+                          : 'text-lg'
+                      } ${
                         msg.role === 'user'
                           ? 'bg-gradient-to-r from-red-600 to-red-700 text-white rounded-br-none border-2 border-red-500'
                           : 'bg-slate-900 text-slate-200 rounded-bl-none border-2 border-slate-700/80'

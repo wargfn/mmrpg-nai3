@@ -38,6 +38,7 @@ import { characterRoster, Character } from './src/core/character.ts';
 import { combatTracker } from './src/core/combat.ts';
 import { campaignManager } from './src/core/campaign.ts';
 import { narratorEngine, AVAILABLE_MODELS, NARRATOR_ROLES } from './src/core/narrator.ts';
+import { loadUsers, findUser, createUser, deleteUser, updatePassword, generateResetToken, resetPasswordWithToken } from './src/core/users.ts';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -794,6 +795,68 @@ app.post('/api/discord/token', async (req: Request, res: Response) => {
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
   }
+});
+
+// ----------------------------------------------------
+// Authentication & User Management APIs
+// ----------------------------------------------------
+app.post('/api/auth/login', (req: Request, res: Response) => {
+  const { username, password } = req.body;
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username/Email and password are required' });
+  }
+  const user = findUser(username);
+  if (!user || user.password !== password) {
+    return res.status(401).json({ error: 'Invalid username/email or password' });
+  }
+  res.json({ success: true, user: { username: user.username, email: user.email, role: user.role } });
+});
+
+app.post('/api/auth/signup', (req: Request, res: Response) => {
+  const { username, email, password } = req.body;
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username and password are required' });
+  }
+  const userEmail = email && email.trim() ? email.trim() : `${username.trim()}@marvel.com`;
+  if (findUser(username) || findUser(userEmail)) {
+    return res.status(400).json({ error: 'Username or email already exists' });
+  }
+  const newUser = createUser(username, userEmail, password, 'player');
+  res.json({ success: true, user: { username: newUser.username, email: newUser.email, role: newUser.role } });
+});
+
+app.post('/api/auth/request-reset', (req: Request, res: Response) => {
+  const { usernameOrEmail } = req.body;
+  if (!usernameOrEmail) {
+    return res.status(400).json({ error: 'Username or email is required' });
+  }
+  const result = generateResetToken(usernameOrEmail);
+  if (!result) {
+    return res.status(404).json({ error: 'User account not found with that username or email' });
+  }
+  res.json({
+    success: true,
+    message: `Password reset instructions sent to ${result.email}`,
+    email: result.email,
+    temporaryToken: result.token,
+  });
+});
+
+app.post('/api/auth/verify-reset', (req: Request, res: Response) => {
+  const { token, newPassword } = req.body;
+  if (!token || !newPassword) {
+    return res.status(400).json({ error: 'Temporary token and new password are required' });
+  }
+  const success = resetPasswordWithToken(token, newPassword);
+  if (!success) {
+    return res.status(400).json({ error: 'Invalid or expired temporary reset token/password' });
+  }
+  res.json({ success: true, message: 'Password has been reset successfully' });
+});
+
+app.get('/api/users', (_req: Request, res: Response) => {
+  const users = loadUsers().map(u => ({ username: u.username, email: u.email, role: u.role, createdAt: u.createdAt }));
+  res.json({ users });
 });
 
 // ----------------------------------------------------
