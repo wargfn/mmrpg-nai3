@@ -38,7 +38,7 @@ import { characterRoster, Character } from './src/core/character.ts';
 import { combatTracker } from './src/core/combat.ts';
 import { campaignManager } from './src/core/campaign.ts';
 import { narratorEngine, AVAILABLE_MODELS, NARRATOR_ROLES } from './src/core/narrator.ts';
-import { loadUsers, findUser, createUser, deleteUser, updatePassword, generateResetToken, resetPasswordWithToken } from './src/core/users.ts';
+import { loadUsers, findUser, createUser, deleteUser, updatePassword, generateResetToken, resetPasswordWithToken, updateUser } from './src/core/users.ts';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -809,7 +809,10 @@ app.post('/api/auth/login', (req: Request, res: Response) => {
   if (!user || user.password !== password) {
     return res.status(401).json({ error: 'Invalid username/email or password' });
   }
-  res.json({ success: true, user: { username: user.username, email: user.email, role: user.role } });
+  if (user.disabled) {
+    return res.status(403).json({ error: 'Your account has been disabled by an administrator. Please contact support.' });
+  }
+  res.json({ success: true, user: { username: user.username, email: user.email, role: user.role, disabled: user.disabled } });
 });
 
 app.post('/api/auth/signup', (req: Request, res: Response) => {
@@ -830,9 +833,16 @@ app.post('/api/auth/request-reset', (req: Request, res: Response) => {
   if (!usernameOrEmail) {
     return res.status(400).json({ error: 'Username or email is required' });
   }
+  const user = findUser(usernameOrEmail);
+  if (!user) {
+    return res.status(404).json({ error: 'User account not found with that username or email' });
+  }
+  if (user.role === 'admin' || user.username.toLowerCase() === 'admin') {
+    return res.status(403).json({ error: 'Admin password resets cannot be performed via the web UI. Please use the command line utility.' });
+  }
   const result = generateResetToken(usernameOrEmail);
   if (!result) {
-    return res.status(404).json({ error: 'User account not found with that username or email' });
+    return res.status(404).json({ error: 'User account not found' });
   }
   res.json({
     success: true,
@@ -857,6 +867,35 @@ app.post('/api/auth/verify-reset', (req: Request, res: Response) => {
 app.get('/api/users', (_req: Request, res: Response) => {
   const users = loadUsers().map(u => ({ username: u.username, email: u.email, role: u.role, createdAt: u.createdAt }));
   res.json({ users });
+});
+
+app.get('/api/admin/users', (_req: Request, res: Response) => {
+  const users = loadUsers().map(u => ({ username: u.username, email: u.email, role: u.role, createdAt: u.createdAt, disabled: !!u.disabled }));
+  res.json({ users });
+});
+
+app.put('/api/admin/users/:username', (req: Request, res: Response) => {
+  const { username } = req.params;
+  const uname = String(username);
+  const { email, role, password, disabled } = req.body;
+  const success = updateUser(uname, { email, role, password, disabled });
+  if (!success) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+  res.json({ success: true, message: 'User updated successfully' });
+});
+
+app.delete('/api/admin/users/:username', (req: Request, res: Response) => {
+  const { username } = req.params;
+  const uname = String(username);
+  if (uname.toLowerCase() === 'admin') {
+    return res.status(403).json({ error: 'Cannot delete default admin account' });
+  }
+  const success = deleteUser(uname);
+  if (!success) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+  res.json({ success: true, message: 'User deleted successfully' });
 });
 
 // ----------------------------------------------------

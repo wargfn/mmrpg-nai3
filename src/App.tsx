@@ -43,6 +43,7 @@ import {
 import { STANDARD_CONDITIONS } from './core/combat.ts';
 import { initializeDiscordSdk } from './utils/discord.ts';
 import { LoginScreen } from './components/LoginScreen.tsx';
+import { UsersManagementView } from './components/UsersManagementView.tsx';
 
 interface ChatMessage {
   id: string;
@@ -111,7 +112,7 @@ export default function App() {
       return null;
     }
   });
-  const [activeTab, setActiveTab] = useState<'narrator' | 'dice' | 'combat' | 'characters' | 'rules' | 'campaign'>('narrator');
+  const [activeTab, setActiveTab] = useState<'narrator' | 'dice' | 'combat' | 'characters' | 'rules' | 'campaign' | 'users'>('narrator');
 
   // Narrator state
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -1751,6 +1752,20 @@ export default function App() {
               <span className="text-[10px] bg-red-950 text-red-300 px-1.5 py-0.5 rounded font-mono uppercase">
                 {currentUser.role}
               </span>
+              {currentUser.role === 'admin' && (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('users')}
+                  className={`px-2.5 py-1 rounded-md text-xs font-bold font-mono flex items-center gap-1 transition cursor-pointer ${
+                    activeTab === 'users'
+                      ? 'bg-red-600 text-white shadow'
+                      : 'bg-red-950/80 text-red-200 hover:bg-red-900 border border-red-700'
+                  }`}
+                  title="Manage users, edit info, and reset passwords"
+                >
+                  <Users className="w-3.5 h-3.5" /> Users
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => {
@@ -1889,6 +1904,11 @@ export default function App() {
 
       {/* Main Body */}
       <main className="flex-1 overflow-hidden relative">
+        {/* USERS MANAGEMENT VIEW (ADMIN ONLY) */}
+        {activeTab === 'users' && currentUser.role === 'admin' && (
+          <UsersManagementView currentUser={currentUser} onBack={() => setActiveTab('narrator')} />
+        )}
+
         {/* TAB 1: NARRATOR CONSOLE */}
         {activeTab === 'narrator' && (
           <div className="flex h-full">
