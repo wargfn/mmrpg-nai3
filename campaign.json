@@ -1,0 +1,88 @@
+{
+  "activePlan": {
+    "campaign_id": "camp_midnight_syndicate",
+    "theme": "The Midnight Syndicate Invasion",
+    "villain": "Green Goblin & Kingpin",
+    "hero_team": [
+      "Spider-Man",
+      "Wolverine",
+      "Iron Man"
+    ],
+    "current_session": 1,
+    "notes": "Kingpin is supplying modified Stark Repulsor cannons to street gangs while Green Goblin strikes from above with neurotoxin bombs.",
+    "created_at": "2026-10-01T12:00:00.000Z",
+    "updated_at": "2026-10-01T12:00:00.000Z",
+    "sessions": [
+      {
+        "session_number": 1,
+        "title": "Episode 1: Ambush in the Concrete Canyons",
+        "act": "Act I: Inciting Incident",
+        "briefing": "The heroes investigate hijacked Stark weapon shipments flooding Midtown Manhattan warehouses.",
+        "primary_objective": "Uncover the Syndicate distribution hub and neutralize the mercenary vanguard.",
+        "complications": [
+          "High civilian collateral in Midtown crossfire",
+          "Oscorp nerve-gas canisters rigged to detonate"
+        ],
+        "key_encounters": [
+          "Goblin Glider strafing run in Times Square",
+          "Kingpin Enforcer brute squad armed with disruptors"
+        ],
+        "status": "active"
+      },
+      {
+        "session_number": 2,
+        "title": "Episode 2: Subway Shakedown & Biohazard",
+        "act": "Act II: Rising Threat & Clash",
+        "briefing": "Osborn attempts to deploy airborne neurotoxin through the Grand Central subway ventilation system.",
+        "primary_objective": "Halt the weaponized subway train and safely vent the hazardous chemicals.",
+        "complications": [
+          "Subway power grid blackout",
+          "Hostage commuter train derailed"
+        ],
+        "key_encounters": [
+          "Acrobatic duel on train rooftops",
+          "Ambush by Osborn Oscorp drone swarm"
+        ],
+        "status": "planned"
+      },
+      {
+        "session_number": 3,
+        "title": "Episode 3: Siege on Fisk Tower Penthouse",
+        "act": "Act III: Climax at the Stronghold",
+        "briefing": "The allied team assaults Fisk Tower to corner Kingpin and unmask the Green Goblin.",
+        "primary_objective": "Confront and neutralize Green Goblin & Kingpin once and for all.",
+        "complications": [
+          "Automated rooftop laser defenses",
+          "Fisk detonates structural charges to cover his escape"
+        ],
+        "key_encounters": [
+          "Dual boss battle against Norman Osborn and Wilson Fisk"
+        ],
+        "status": "planned"
+      }
+    ]
+  },
+  "memories": [
+    {
+      "id": "mem_daily_bugle",
+      "category": "entity",
+      "key": "daily_bugle",
+      "title": "The Daily Bugle",
+      "details": "Major NYC newspaper, J. Jonah Jameson running front-page accusations.",
+      "timestamp": "2026-10-01T12:00:00.000Z"
+    },
+    {
+      "id": "mem_fisk_tower",
+      "category": "entity",
+      "key": "fisk_tower",
+      "title": "Fisk Tower",
+      "details": "Fortified skyscraper in Midtown Manhattan loaded with high-tech defenses.",
+      "timestamp": "2026-10-01T12:00:00.000Z"
+    }
+  ],
+  "eventLog": [
+    "[Day 1] Spider-Man intercepted initial shipment of Stark-tech weaponry in Queens.",
+    "[Day 2] Wolverine tracked scent of Goblin formula to an abandoned warehouse in DUMBO.",
+    "[2:06:54 PM] Loaded campaign from server file: \"midnight_syndicate_invasion.json\" (\"The Midnight Syndicate Invasion\")"
+  ]
+}

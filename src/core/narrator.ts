@@ -94,16 +94,17 @@ export const NARRATOR_ROLES: Record<string, NarratorRole> = {
 };
 
 export const AVAILABLE_MODELS = [
-  { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', badge: 'General / Recommended', desc: 'Fast, responsive storytelling and roleplay' },
-  { id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash Lite', badge: 'Fastest', desc: 'Ultra-low latency for quick action resolutions' },
-  { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro Preview', badge: 'Complex Reasoning', desc: 'Deep campaign lore, intricate mysteries, and tactical depth' },
+  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', badge: 'General / Recommended', desc: 'Fast, responsive storytelling and roleplay' },
+  { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite', badge: 'Fastest', desc: 'Ultra-low latency for quick action resolutions' },
+  { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', badge: 'Complex Reasoning', desc: 'Deep campaign lore, intricate mysteries, and tactical depth' },
+  { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', badge: 'Stable Alternative', desc: 'High reliability multi-turn generation' },
 ];
 
 export class NarratorEngine {
   private messages: ChatMessage[] = [];
   private activeCharacterName: string = 'Spider-Man';
   private activeRoleId: string = 'stan_lee';
-  private modelName: string = 'gemini-3.5-flash';
+  private modelName: string = 'gemini-2.5-flash';
   private aiClient: GoogleGenAI | null = null;
 
   constructor() {
@@ -240,13 +241,30 @@ export class NarratorEngine {
       );
     }
 
-    // 3. Campaign Briefing
+    // 3. Campaign Briefing & Storyline Directives
     const campaignCtx = campaignManager.getCurrentSessionContext();
     if (campaignCtx) {
-      sections.push(`[CAMPAIGN: ${campaignCtx.plan.theme}]
-- Villain: ${campaignCtx.plan.villain}
-- Current Session (${campaignCtx.session.act}): ${campaignCtx.session.briefing}
-- Objective: ${campaignCtx.session.primary_objective}`);
+      const plan = campaignCtx.plan;
+      const s = campaignCtx.session;
+      const otherSessions = plan.sessions
+        .map(sess => `  • Episode ${sess.session_number} [${sess.status.toUpperCase()}]: "${sess.title}" (${sess.act}) - Target: ${sess.primary_objective}`)
+        .join('\n');
+
+      sections.push(`[ACTIVE CAMPAIGN STORYLINE & DIRECTIVES - STRICTLY ADHERE TO THIS PLAN]
+- Campaign Arc Title: "${plan.theme}"
+- Primary Arch-Villain: ${plan.villain}
+- Allied Hero Team: ${plan.hero_team.join(', ')}
+- Current Active Episode: Episode ${s.session_number} of ${plan.sessions.length}: "${s.title}" (${s.act})
+- Episode Briefing / Setup: ${s.briefing}
+- PRIMARY MISSION OBJECTIVE: ${s.primary_objective}
+${s.complications?.length ? `- Active Complications To Feature: ${s.complications.join('; ')}` : ''}
+${s.key_encounters?.length ? `- Planned Key Encounters: ${s.key_encounters.join('; ')}` : ''}
+${plan.notes ? `- GM Campaign Directives & Lore Notes: ${plan.notes}` : ''}
+- Full Campaign Episodes Roadmap:
+${otherSessions}
+
+*** MANDATORY STORYLINE INSTRUCTION ***
+You MUST align your narration with this active campaign plan. Frame challenges, NPC dialogue, enemy maneuvers, and environmental obstacles around advancing toward the current objective: "${s.primary_objective}". Highlight the threat of ${plan.villain} and incorporate the planned complications.`);
     }
 
     // 4. Keyword Rule Hit Citations
@@ -572,6 +590,61 @@ export class NarratorEngine {
           break;
         }
 
+        case 'campaign':
+        case 'plan': {
+          const sub = (args[0] || '').toLowerCase();
+          const rest = args.slice(1).join(' ').trim();
+
+          if (sub === 'set-villain' && rest) {
+            campaignManager.updatePlan({ villain: rest });
+            const plan = campaignManager.getPlan()!;
+            responseContent = `🦹 **Campaign Villain Updated**: Primary nemesis is now **${plan.villain}**! The Narrator AI will adapt all future narrative arcs and encounters accordingly.`;
+          } else if ((sub === 'set-objective' || sub === 'objective') && rest) {
+            const ctx = campaignManager.getCurrentSessionContext();
+            if (ctx) {
+              campaignManager.updateSession(ctx.session.session_number, { primary_objective: rest });
+              responseContent = `🎯 **Mission Objective Updated**: Episode ${ctx.session.session_number}'s primary objective is now: **"${rest}"**. The Narrator AI will steer the scene toward this goal.`;
+            } else {
+              responseContent = `No active campaign session found.`;
+            }
+          } else if ((sub === 'set-theme' || sub === 'theme') && rest) {
+            campaignManager.updatePlan({ theme: rest });
+            responseContent = `🗺️ **Campaign Theme Updated**: Campaign arc title is now **"${rest}"**.`;
+          } else if ((sub === 'set-session' || sub === 'session') && rest) {
+            const num = parseInt(rest, 10);
+            if (!isNaN(num)) {
+              campaignManager.updatePlan({ current_session: num });
+              const ctx = campaignManager.getCurrentSessionContext()!;
+              responseContent = `⏩ **Active Episode Changed**: Now playing **Episode ${ctx.session.session_number}: ${ctx.session.title}** (${ctx.session.act})!\n- **Objective**: ${ctx.session.primary_objective}`;
+            } else {
+              responseContent = `Please provide a valid session number. Example: \`/campaign set-session 2\``;
+            }
+          } else if (sub === 'edit') {
+            responseContent = `📝 **Campaign Editing**: Click the **"Edit Campaign Plan"** button in the top action bar or status sidebar, or use quick commands:\n- \`/campaign set-villain <name>\`\n- \`/campaign set-objective <text>\`\n- \`/campaign set-session <number>\`\n- \`/campaign set-theme <theme>\``;
+          } else {
+            // Display summary
+            const ctx = campaignManager.getCurrentSessionContext();
+            if (ctx) {
+              const p = ctx.plan;
+              const s = ctx.session;
+              responseContent =
+                `### 🗺️ Active Campaign: ${p.theme}\n` +
+                `- **Arch-Villain**: ${p.villain}\n` +
+                `- **Hero Team**: ${p.hero_team.join(', ')}\n` +
+                `- **Active Episode**: Episode ${s.session_number} of ${p.sessions.length}: **${s.title}** (${s.act})\n` +
+                `- **Current Objective**: ${s.primary_objective}\n` +
+                `- **Briefing**: ${s.briefing}\n` +
+                (s.complications?.length ? `- **Complications**: ${s.complications.join(', ')}\n` : '') +
+                (s.key_encounters?.length ? `- **Key Encounters**: ${s.key_encounters.join(', ')}\n` : '') +
+                (p.notes ? `- **GM Directives / Notes**: ${p.notes}\n` : '') +
+                `\n*Tip: Click the "Edit Campaign" button or type \`/campaign set-objective <text>\` to change the plan at any time!*`;
+            } else {
+              responseContent = `No active campaign plan found.`;
+            }
+          }
+          break;
+        }
+
         default:
           responseContent = `Unknown command \`/${command}\`. Type \`/help\` for available actions.`;
       }
@@ -654,7 +727,7 @@ ${contextPrompt}`;
           contents.push({ role: 'user', parts: [{ text: trimmed }] });
         }
 
-        const candidateModels = [this.modelName, 'gemini-3.5-flash', 'gemini-3.8-flash', 'gemini-3.1-flash-lite'].filter(
+        const candidateModels = [this.modelName, 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro'].filter(
           (m, i, arr) => arr.indexOf(m) === i
         );
 
@@ -705,6 +778,13 @@ ${contextPrompt}`;
   private generateSimulatedNarration(playerAction: string, role: NarratorRole): string {
     const char = this.getActiveCharacter() || characterRoster.getSheet('Spider-Man')!;
     const lower = playerAction.toLowerCase();
+    const campaignCtx = campaignManager.getCurrentSessionContext();
+    const villain = campaignCtx?.plan.villain || 'the villain';
+    const theme = campaignCtx?.plan.theme || 'the saga';
+    const session = campaignCtx?.session;
+    const episodeTitle = session?.title || 'the current battle';
+    const objective = session?.primary_objective || 'stop the mastermind and protect the city';
+    const complication = session?.complications?.length ? session.complications[0] : 'civilian safety in jeopardy';
 
     if (
       lower.includes('attack') ||
@@ -721,9 +801,9 @@ ${contextPrompt}`;
           roll.is_fantastic ? '⭐ FANTASTIC!' : ''
         })*\n\n` +
         (hit
-          ? `Your strike lands with bone-jarring impact! The force knocks the mercenaries sprawling against the concrete pillars. Debris crashes down as the villain snarls and prepares a counter-salvo from his glider.\n\n*"Is that the best you've got?"* you quip, sticking to the wall above.`
-          : `You fire off a rapid sequence, but the target rolls behind a reinforced steel container just in the nick of time. Shrapnel ricochets across the avenue as the villain repositions for another strafing run!`) +
-        `\n\n*What is your next move, hero?*`
+          ? `Your strike lands with bone-jarring impact! The force knocks the enforcers of **${villain}** sprawling across the field. Ahead, you press closer toward your objective: *"${objective}"*. Debris crashes down as enemy reinforcements scramble to safeguard ${villain}'s operation.\n\n*"Is that the best ${villain}'s crew can do?"* you quip, regrouping in the midst of ${theme}.`
+          : `You fire off a rapid sequence, but ${villain}'s lieutenants duck behind reinforced blast shields just in time! Shrapnel ricochets across the perimeter, triggering a complication: *${complication}*!`) +
+        `\n\n*What is your next move to advance on ${villain}?*`
       );
     }
 
@@ -734,17 +814,19 @@ ${contextPrompt}`;
       lower.includes('search')
     ) {
       return (
-        `🔍 **Sensory Scan:**\n` +
-        `Your heightened senses take in the chaos of Midtown. High above, the green vapor trails of an Oscorp prototype indicate the glider's trajectory heading towards Fisk Tower. Below, police sirens echo as officers establish a cordon around the shattered lobby.\n\n` +
-        `You spot a damaged Oscorp data-slate sparking near the entrance, containing partial flight telemetry and shipment manifests!`
+        `🔍 **Sensory Scan & Tactical Recon:**\n` +
+        `Your heightened senses survey the active conflict zone in **${theme}** (*${episodeTitle}*).\n\n` +
+        `You lock eyes on the immediate threat perimeter orchestrated by **${villain}**. Tactical markers indicate: *"${objective}"*.\n` +
+        `Environmental warning: *${complication}*. You spot a tactical datapad left by ${villain}'s vanguard detailing their fallback vectors!`
       );
     }
 
     return (
       `🕸️ **The Multiverse Reacts:**\n` +
-      `${char.name} executes your maneuver with precision. The crowd below roars with encouragement as your heroics buy precious seconds for civilians to clear the danger zone.\n\n` +
-      `From the swirling smoke overhead, a menacing cackle reverberates across the street: *"You're too late, hero! The city is already ours!"*\n\n` +
-      `What is your next move?`
+      `${char.name} executes your maneuver with precision. The crowd below rallies with hope as your heroic intervention thwarts ${villain}'s initial gambit in **${theme}**.\n\n` +
+      `Your current mission directive remains clear: *"${objective}"*.\n` +
+      `From the swirling smoke, a comm-link crackles with ${villain}'s taunting broadcast: *"You cannot stop what is coming!"*\n\n` +
+      `What is your next move, hero?`
     );
   }
 
@@ -893,9 +975,10 @@ ${contextPrompt}`;
 
           const candidateModels = [
             this.modelName,
-            'gemini-3.5-flash',
-            'gemini-3.8-flash',
-            'gemini-3.1-flash-lite',
+            'gemini-2.5-flash',
+            'gemini-2.0-flash',
+            'gemini-2.5-flash-lite',
+            'gemini-2.5-pro',
           ].filter((m, i, arr) => arr.indexOf(m) === i);
 
           for (const candidate of candidateModels) {
@@ -973,12 +1056,16 @@ ${contextPrompt}`;
     const isBotch = roll.is_botch;
     const isUltimate = roll.is_ultimate;
 
+    const campaignCtx = campaignManager.getCurrentSessionContext();
+    const villain = campaignCtx?.plan.villain || 'the villain';
+    const objective = campaignCtx?.session.primary_objective || 'the mission objective';
+
     if (isUltimate) {
       return (
         `🌟 **ULTIMATE 616 TRIUMPH!**\n\n` +
         `The dice align in cosmic harmony—a pure 616! With breathtaking, unassailable mastery, ${char.name} executes the maneuver! ` +
         (actionDesc ? `("${actionDesc}") ` : '') +
-        `The villain is utterly overwhelmed as shockwaves tear across the pavement and your strike shatters their defense beyond repair!\n\n` +
+        `The enforcers of **${villain}** are utterly overwhelmed as shockwaves tear across the pavement, thrusting you directly toward: *"${objective}"*!\n\n` +
         `*True Believer, that's what legends are made of! What do you follow up with?*`
       );
     }
@@ -988,8 +1075,8 @@ ${contextPrompt}`;
         `💀 **DISASTROUS BOTCH! (1-1-1)**\n\n` +
         `Fate takes a cruel, jagged turn! The footing gives way beneath ${char.name}'s boots just as you commit to the action. ` +
         (actionDesc ? `Instead of executing "${actionDesc}", ` : '') +
-        `your momentum betrays you, sending you skidding across loose debris right into the villain's crosshairs!\n\n` +
-        `*A sinister chuckle echoes as your enemy prepares to capitalize on this critical blunder. How do you recover?!*`
+        `your momentum betrays you, sending you skidding across loose debris right into **${villain}**'s crosshairs!\n\n` +
+        `*A sinister chuckle echoes as ${villain}'s forces prepare to capitalize on this critical blunder. How do you recover?!*`
       );
     }
 
@@ -998,7 +1085,7 @@ ${contextPrompt}`;
         `⭐ **FANTASTIC SUCCESS! (Marvel Logo 6!)**\n\n` +
         `The Marvel die blazes with heroic resonance! ${char.name} surges forward with sudden, electrifying inspiration. ` +
         (actionDesc ? `Executing: "${actionDesc}". ` : '') +
-        `Not only do you smash through the target's threshold with a total score of **${roll.total_score}**, but the Fantastic surge triggers an extraordinary secondary benefit! The enemy's glider or equipment sparks violently, exposing their weak point to your next strike!\n\n` +
+        `Not only do you smash through the target's threshold with a total score of **${roll.total_score}**, but the Fantastic surge triggers an extraordinary breakthrough toward *"${objective}"*! **${villain}**'s equipment sparks violently, exposing their weak point to your next strike!\n\n` +
         `*"Excelsior!"* The momentum is completely in your hands. How do you press your advantage?`
       );
     }
@@ -1008,18 +1095,36 @@ ${contextPrompt}`;
         `💥 **CHECK SUCCESSFUL! (Total Score: ${roll.total_score})**\n\n` +
         `Solid execution! ${char.name} locks in, applying ${ability.toUpperCase()} prowess with battle-tested precision. ` +
         (actionDesc ? `You carry out: "${actionDesc}". ` : '') +
-        `The check clears the challenge, staggering the opposition and securing the tactical advantage on the field!\n\n` +
-        `*The dust clears and the enemy re-evaluates you with newfound caution. What is your next move, hero?*`
+        `The check clears the challenge, pushing ${villain}'s perimeter back and advancing on: *"${objective}"*!\n\n` +
+        `*The dust clears and ${villain}'s squad re-evaluates you with newfound caution. What is your next move, hero?*`
       );
     }
 
     return (
       `🛡️ **CHECK FAILED (Total Score: ${roll.total_score})**\n\n` +
-      `Close, but the opposition anticipates your vector! ` +
+      `Close, but ${villain}'s opposition anticipates your vector! ` +
       (actionDesc ? `Attempting "${actionDesc}", ` : '') +
       `${char.name}'s action misses the critical threshold. The enemy parries or sidesteps in the nick of time, forcing you onto the defensive as counter-fire peppers the surrounding area.\n\n` +
       `*You reset your stance amidst the smoke. What is your reaction?*`
     );
+  }
+
+  public isOnline(): boolean {
+    return this.aiClient !== null;
+  }
+
+  public getApiKeyStatus(): { configured: boolean; message: string } {
+    const key = process.env.GEMINI_API_KEY || process.env.API_KEY || '';
+    if (!key || key.startsWith('MY_')) {
+      return {
+        configured: false,
+        message: 'No GEMINI_API_KEY environment variable detected on the server. The application is operating in local Simulation Fallback (Offline) mode.',
+      };
+    }
+    return {
+      configured: true,
+      message: 'GEMINI_API_KEY is configured on the server. AI Narrator online.',
+    };
   }
 }
 

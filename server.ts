@@ -516,6 +516,80 @@ app.post('/api/campaign/plan', (req: Request, res: Response) => {
   }
 });
 
+app.put('/api/campaign/plan', (req: Request, res: Response) => {
+  try {
+    const plan = campaignManager.updatePlan(req.body);
+    const currCtx = campaignManager.getCurrentSessionContext();
+    
+    // Announce the campaign update into the Narrator AI message stream
+    narratorEngine.addMessage({
+      role: 'assistant',
+      content: `🎯 **Campaign Storyline Plan Updated!**\n` +
+        `- **Theme / Arc:** "${plan.theme}"\n` +
+        `- **Primary Nemesis:** **${plan.villain}**\n` +
+        `- **Allied Hero Team:** ${plan.hero_team?.join(', ') || 'Avengers'}\n` +
+        `- **Active Episode:** Episode ${plan.current_session}: "${currCtx?.session.title || 'Mission'}" (${currCtx?.session.act || 'Current Act'})\n` +
+        `- **Primary Objective:** ${currCtx?.session.primary_objective || 'Investigate and protect civilians'}\n\n` +
+        `*The Narrator AI has synchronized with this updated campaign plan and will strictly adhere to its narrative directives!*`,
+      metadata: { type: 'command' },
+    });
+
+    res.json({
+      success: true,
+      plan,
+      context: currCtx,
+      eventLog: campaignManager.getEventLog(),
+      messages: narratorEngine.getMessages(),
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.put('/api/campaign/session/:sessionNumber', (req: Request, res: Response) => {
+  try {
+    const sessNum = parseInt(String(req.params.sessionNumber), 10);
+    const plan = campaignManager.updateSession(sessNum, req.body);
+    res.json({
+      success: true,
+      plan,
+      context: campaignManager.getCurrentSessionContext(),
+      eventLog: campaignManager.getEventLog(),
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/campaign/session', (req: Request, res: Response) => {
+  try {
+    const plan = campaignManager.addSession(req.body);
+    res.status(201).json({
+      success: true,
+      plan,
+      context: campaignManager.getCurrentSessionContext(),
+      eventLog: campaignManager.getEventLog(),
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.delete('/api/campaign/session/:sessionNumber', (req: Request, res: Response) => {
+  try {
+    const sessNum = parseInt(String(req.params.sessionNumber), 10);
+    const plan = campaignManager.deleteSession(sessNum);
+    res.json({
+      success: true,
+      plan,
+      context: campaignManager.getCurrentSessionContext(),
+      eventLog: campaignManager.getEventLog(),
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 app.post('/api/campaign/event', (req: Request, res: Response) => {
   try {
     const { event } = req.body;
@@ -614,6 +688,159 @@ app.post('/api/campaign/conclude', (req: Request, res: Response) => {
 });
 
 // ----------------------------------------------------
+// 5b. Local Campaign JSON File Storage & Management
+// ----------------------------------------------------
+app.get('/api/campaign/files', (_req: Request, res: Response) => {
+  try {
+    const files = campaignManager.listSavedCampaigns();
+    res.json({ files });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/campaign/files/save', (req: Request, res: Response) => {
+  try {
+    const { filename, title, plan, includeMemories, includeEventLog } = req.body;
+    const saveResult = campaignManager.saveCampaignToFile({
+      filename,
+      title,
+      plan,
+      includeMemories,
+      includeEventLog,
+    });
+    res.json({
+      success: true,
+      filename: saveResult.filename,
+      plan: saveResult.plan,
+      files: campaignManager.listSavedCampaigns(),
+      message: `Campaign saved to server file "${saveResult.filename}".`,
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/campaign/files/load', (req: Request, res: Response) => {
+  try {
+    const { filename } = req.body;
+    if (!filename) {
+      return res.status(400).json({ error: 'Filename is required' });
+    }
+    const loadResult = campaignManager.loadCampaignFromFile(String(filename));
+    const currCtx = campaignManager.getCurrentSessionContext();
+
+    // Announce the loaded campaign into the Narrator AI chat
+    narratorEngine.addMessage({
+      role: 'assistant',
+      content: `📚 **Campaign Loaded from Server Storage!**\n` +
+        `- **Theme / Arc:** "${loadResult.plan.theme}"\n` +
+        `- **Primary Nemesis:** **${loadResult.plan.villain}**\n` +
+        `- **Allied Hero Team:** ${loadResult.plan.hero_team?.join(', ') || 'Avengers'}\n` +
+        `- **Active Episode:** Episode ${loadResult.plan.current_session}: "${currCtx?.session.title || 'Mission'}" (${currCtx?.session.act || 'Current Act'})\n` +
+        `- **Primary Objective:** ${currCtx?.session.primary_objective || 'Investigate and protect civilians'}\n\n` +
+        `*The Narrator AI is now actively tracking "${loadResult.plan.theme}" from file "${loadResult.filename}"!*`,
+      metadata: { type: 'command' },
+    });
+
+    res.json({
+      success: true,
+      plan: loadResult.plan,
+      context: currCtx,
+      memories: campaignManager.searchMemories(''),
+      eventLog: campaignManager.getEventLog(),
+      messages: narratorEngine.getMessages(),
+      filename: loadResult.filename,
+      files: campaignManager.listSavedCampaigns(),
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.delete('/api/campaign/files/:filename', (req: Request, res: Response) => {
+  try {
+    const filename = String(req.params.filename);
+    const success = campaignManager.deleteSavedCampaign(filename);
+    if (!success) {
+      return res.status(404).json({ error: `File "${filename}" not found.` });
+    }
+    res.json({
+      success: true,
+      message: `File "${filename}" deleted.`,
+      files: campaignManager.listSavedCampaigns(),
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get('/api/campaign/files/download/:filename', (req: Request, res: Response) => {
+  try {
+    const filename = String(req.params.filename);
+    const rawContent = campaignManager.getSavedCampaignRaw(filename);
+    const safeFilename = path.basename(filename);
+
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"`);
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+    res.send(rawContent);
+  } catch (err: any) {
+    res.status(404).json({ error: err.message });
+  }
+});
+
+app.post('/api/campaign/files/import', (req: Request, res: Response) => {
+  try {
+    const { jsonContent, filename, loadImmediately } = req.body;
+    if (!jsonContent) {
+      return res.status(400).json({ error: 'jsonContent is required.' });
+    }
+
+    const importResult = campaignManager.importCampaignFromJSON(jsonContent, filename);
+
+    if (loadImmediately) {
+      campaignManager.loadCampaignFromFile(importResult.filename);
+      const currCtx = campaignManager.getCurrentSessionContext();
+      narratorEngine.addMessage({
+        role: 'assistant',
+        content: `📥 **Imported Campaign Loaded!**\n` +
+          `- **Theme / Arc:** "${importResult.plan.theme}"\n` +
+          `- **Primary Nemesis:** **${importResult.plan.villain}**\n` +
+          `- **Active Episode:** Episode ${importResult.plan.current_session}: "${currCtx?.session.title || 'Mission'}"\n\n` +
+          `*Saved to server as "${importResult.filename}".*`,
+        metadata: { type: 'command' },
+      });
+    }
+
+    res.json({
+      success: true,
+      filename: importResult.filename,
+      plan: campaignManager.getPlan(),
+      context: campaignManager.getCurrentSessionContext(),
+      eventLog: campaignManager.getEventLog(),
+      memories: campaignManager.searchMemories(''),
+      files: campaignManager.listSavedCampaigns(),
+      messages: narratorEngine.getMessages(),
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get('/api/campaign/files/template', (_req: Request, res: Response) => {
+  try {
+    const templateContent = campaignManager.getBlankTemplateJSON();
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="blank_campaign_template.json"');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+    res.send(templateContent);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ----------------------------------------------------
 // 6. Interactive Narrator AI APIs
 // ----------------------------------------------------
 app.get('/api/narrator/config', (_req: Request, res: Response) => {
@@ -623,6 +850,8 @@ app.get('/api/narrator/config', (_req: Request, res: Response) => {
     activeRole: narratorEngine.getRole(),
     availableRoles: Object.values(NARRATOR_ROLES),
     activeCharacter: narratorEngine.getActiveCharacter(),
+    isOnline: narratorEngine.isOnline(),
+    apiKeyStatus: narratorEngine.getApiKeyStatus(),
   });
 });
 

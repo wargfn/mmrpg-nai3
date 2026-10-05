@@ -39,11 +39,20 @@ import {
   Copy,
   Tag,
   Activity,
+  Edit3,
+  FolderOpen,
+  FileJson,
+  Save,
+  Upload,
+  HardDrive,
 } from 'lucide-react';
 import { STANDARD_CONDITIONS } from './core/combat.ts';
 import { initializeDiscordSdk } from './utils/discord.ts';
 import { LoginScreen } from './components/LoginScreen.tsx';
 import { UsersManagementView } from './components/UsersManagementView.tsx';
+import { CampaignEditModal } from './components/CampaignEditModal.tsx';
+import { CampaignFileManagerModal } from './components/CampaignFileManagerModal.tsx';
+import { CampaignPlan } from './core/campaign.ts';
 
 interface ChatMessage {
   id: string;
@@ -121,13 +130,16 @@ export default function App() {
   const [activeCharName, setActiveCharName] = useState('Spider-Man');
   const [characters, setCharacters] = useState<CharacterSheet[]>([]);
   const [showContext, setShowContext] = useState(false);
-  const [selectedModel, setSelectedModel] = useState<string>('gemini-3.5-flash');
+  const [selectedModel, setSelectedModel] = useState<string>('gemini-2.5-flash');
   const [selectedRole, setSelectedRole] = useState<string>('stan_lee');
   const [narratorFontSize, setNarratorFontSize] = useState<'xs' | 'sm' | 'base' | 'lg'>('sm');
+  const [narratorOnline, setNarratorOnline] = useState<boolean>(true);
+  const [apiKeyStatus, setApiKeyStatus] = useState<any>(null);
   const [availableModels, setAvailableModels] = useState<any[]>([
-    { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', badge: 'General Tasks', desc: 'Balanced & responsive' },
-    { id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash Lite', badge: 'Fast Tasks', desc: 'Ultra-fast reactions' },
-    { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro Preview', badge: 'Complex Tasks', desc: 'Deep lore & tactics' },
+    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', badge: 'General Tasks', desc: 'Balanced & responsive' },
+    { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite', badge: 'Fast Tasks', desc: 'Ultra-fast reactions' },
+    { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', badge: 'Complex Tasks', desc: 'Deep lore & tactics' },
+    { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', badge: 'Stable Tasks', desc: 'High reliability' },
   ]);
   const [availableRoles, setAvailableRoles] = useState<any[]>([
     { id: 'stan_lee', name: 'Stan Lee', icon: '🎙️', tagline: 'The True Believer GM' },
@@ -175,6 +187,70 @@ export default function App() {
   const [downloadSuccessMessage, setDownloadSuccessMessage] = useState<string | null>(null);
   const [copiedLog, setCopiedLog] = useState(false);
   const [isDownloadingLog, setIsDownloadingLog] = useState(false);
+  const [isCampaignModalOpen, setIsCampaignModalOpen] = useState(false);
+  const [campaignModalSource, setCampaignModalSource] = useState<'narrator' | 'campaign'>('campaign');
+  const [campaignModalEpisode, setCampaignModalEpisode] = useState<number | undefined>(undefined);
+
+  // Server-side JSON Campaign Files Manager state
+  const [isCampaignFileManagerOpen, setIsCampaignFileManagerOpen] = useState(false);
+  const [campaignFileManagerInitialTab, setCampaignFileManagerInitialTab] = useState<'load' | 'save' | 'import'>('load');
+  const [serverSavedCampaigns, setServerSavedCampaigns] = useState<any[]>([]);
+
+  const handleOpenCampaignModal = (source: 'narrator' | 'campaign' = 'campaign', episodeNumber?: number) => {
+    setCampaignModalSource(source);
+    setCampaignModalEpisode(episodeNumber);
+    setIsCampaignModalOpen(true);
+  };
+
+  const handleOpenCampaignFileManager = (tab: 'load' | 'save' | 'import' = 'load') => {
+    setCampaignFileManagerInitialTab(tab);
+    setIsCampaignFileManagerOpen(true);
+  };
+
+  const fetchServerCampaignFiles = async () => {
+    try {
+      const res = await fetch('/api/campaign/files');
+      const data = await res.json();
+      if (data.files) {
+        setServerSavedCampaigns(data.files);
+      }
+    } catch {}
+  };
+
+  const handleCampaignLoadedFromFile = (data: {
+    plan: CampaignPlan;
+    context?: any;
+    memories?: any[];
+    eventLog?: string[];
+  }) => {
+    setCampaignData({
+      plan: data.plan,
+      context: data.context || {
+        plan: data.plan,
+        session: data.plan.sessions?.find(s => s.session_number === data.plan.current_session) || data.plan.sessions?.[0],
+      },
+      memories: data.memories || [],
+      eventLog: data.eventLog || [],
+    });
+    fetchCampaign();
+    fetchMessages();
+    fetchServerCampaignFiles();
+  };
+
+  const handleSaveCampaignSuccess = (updatedPlan: CampaignPlan) => {
+    setCampaignData((prev: any) => ({
+      ...prev,
+      plan: updatedPlan,
+      context: {
+        ...prev?.context,
+        plan: updatedPlan,
+        session: updatedPlan.sessions.find(s => s.session_number === updatedPlan.current_session) || updatedPlan.sessions[0],
+      },
+    }));
+    fetchCampaign();
+    fetchMessages();
+    fetchServerCampaignFiles();
+  };
 
   // Character creator state
   const [showCreatorModal, setShowCreatorModal] = useState(false);
@@ -230,6 +306,7 @@ export default function App() {
     fetchCombat();
     fetchCampaign();
     fetchRulesIndex();
+    fetchServerCampaignFiles();
   }, []);
 
   useEffect(() => {
@@ -244,6 +321,11 @@ export default function App() {
       if (data.activeCharacter) setActiveCharName(data.activeCharacter.name);
       if (data.activeModel) setSelectedModel(data.activeModel);
       if (data.activeRole?.id) setSelectedRole(data.activeRole.id);
+
+      const cfgRes = await fetch('/api/narrator/config');
+      const cfgData = await cfgRes.json();
+      if (typeof cfgData.isOnline === 'boolean') setNarratorOnline(cfgData.isOnline);
+      if (cfgData.apiKeyStatus) setApiKeyStatus(cfgData.apiKeyStatus);
     } catch (e) {
       console.error(e);
     }
@@ -1927,16 +2009,32 @@ export default function App() {
                       onChange={(e) => handleModelChange(e.target.value)}
                       className="bg-transparent text-xs font-semibold text-white focus:outline-none cursor-pointer"
                     >
-                      <option value="gemini-3.5-flash" className="bg-slate-900 text-slate-100">
-                        Gemini 3.5 Flash (General)
+                      <option value="gemini-2.5-flash" className="bg-slate-900 text-slate-100">
+                        Gemini 2.5 Flash (General)
                       </option>
-                      <option value="gemini-3.1-flash-lite" className="bg-slate-900 text-slate-100">
-                        Gemini 3.1 Flash Lite (Fastest)
+                      <option value="gemini-2.5-flash-lite" className="bg-slate-900 text-slate-100">
+                        Gemini 2.5 Flash Lite (Fastest)
                       </option>
-                      <option value="gemini-3.1-pro-preview" className="bg-slate-900 text-slate-100">
-                        Gemini 3.1 Pro Preview (Complex)
+                      <option value="gemini-2.5-pro" className="bg-slate-900 text-slate-100">
+                        Gemini 2.5 Pro (Complex)
+                      </option>
+                      <option value="gemini-2.0-flash" className="bg-slate-900 text-slate-100">
+                        Gemini 2.0 Flash (Stable)
                       </option>
                     </select>
+                  </div>
+
+                  {/* API / Online Status Badge */}
+                  <div
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-mono font-medium ${
+                      narratorOnline
+                        ? 'bg-emerald-950/60 border-emerald-500/60 text-emerald-300'
+                        : 'bg-amber-950/70 border-amber-500/60 text-amber-300'
+                    }`}
+                    title={apiKeyStatus?.message || (narratorOnline ? 'AI Narrator Online' : 'Simulation Fallback Mode')}
+                  >
+                    <span className={`w-2 h-2 rounded-full ${narratorOnline ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+                    <span>{narratorOnline ? 'AI Online' : 'Offline / Simulation Mode'}</span>
                   </div>
 
                   {/* GM Role / Persona Selector */}
@@ -2001,6 +2099,15 @@ export default function App() {
                       XL
                     </button>
                   </div>
+
+                  <button
+                    onClick={() => handleOpenCampaignModal('narrator')}
+                    title="Edit Campaign Plan, Arch-Villain & Episode Directives"
+                    className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg bg-red-950/70 hover:bg-red-900/90 text-red-300 hover:text-white border border-red-700/80 hover:border-red-500 transition cursor-pointer font-bold shadow-sm"
+                  >
+                    <MapPin className="w-3.5 h-3.5 text-red-400" />
+                    <span className="hidden sm:inline">Edit Campaign</span>
+                  </button>
 
                   <button
                     onClick={handleDownloadEventLog}
@@ -2169,11 +2276,13 @@ Campaign: ${campaignData?.plan?.theme || 'The Midnight Syndicate Invasion'} (Vil
                   <div className="flex items-center gap-2.5 text-yellow-400 text-xs py-3 px-2 bg-slate-900/60 rounded-lg border border-yellow-500/20 max-w-md animate-pulse">
                     <Sparkles className="w-4 h-4 animate-spin text-yellow-400" />
                     <span>
-                      {selectedModel === 'gemini-3.1-pro-preview'
-                        ? 'Gemini 3.1 Pro is calculating multiversal tactics & narrative...'
-                        : selectedModel === 'gemini-3.1-flash-lite'
-                        ? 'Gemini 3.1 Flash Lite is responding rapidly...'
-                        : 'Gemini 3.5 Flash is resolving the scene narrative...'}
+                      {selectedModel === 'gemini-2.5-pro'
+                        ? 'Gemini 2.5 Pro is calculating multiversal tactics & narrative...'
+                        : selectedModel === 'gemini-2.5-flash-lite'
+                        ? 'Gemini 2.5 Flash Lite is responding rapidly...'
+                        : selectedModel === 'gemini-2.0-flash'
+                        ? 'Gemini 2.0 Flash is spinning up the multiverse...'
+                        : 'Gemini 2.5 Flash is resolving the scene narrative...'}
                     </span>
                   </div>
                 )}
@@ -2225,6 +2334,14 @@ Campaign: ${campaignData?.plan?.theme || 'The Midnight Syndicate Invasion'} (Vil
                   title="Ask Narrator AI for rules index summary"
                 >
                   📖 /rules index
+                </button>
+                <button
+                  onClick={() => handleOpenCampaignModal('narrator')}
+                  className="shrink-0 bg-red-950/60 hover:bg-red-900/80 text-red-300 border border-red-800/80 px-2.5 py-1 rounded-full transition flex items-center gap-1 font-semibold text-xs cursor-pointer"
+                  title="Edit active campaign arc and mission objectives"
+                >
+                  <MapPin className="w-3.5 h-3.5 text-red-400" />
+                  <span>Arc: {campaignData?.plan?.theme || 'Edit Campaign'}</span>
                 </button>
                 <button
                   onClick={() => setActiveTab('rules')}
@@ -2320,6 +2437,68 @@ Campaign: ${campaignData?.plan?.theme || 'The Midnight Syndicate Invasion'} (Vil
                   ))}
                 </div>
               </div>
+
+              {/* Active Campaign Plan Card in Narrator View */}
+              {campaignData?.plan && (
+                <div className="bg-slate-950 border border-slate-800 hover:border-slate-700 rounded-xl p-4 transition shadow-md">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-1.5">
+                      <MapPin className="w-4 h-4 text-red-500" />
+                      <h4 className="font-comic text-base text-yellow-400 uppercase tracking-wide">
+                        Storyline Arc
+                      </h4>
+                    </div>
+                    <span className="text-[10px] bg-red-950/80 text-red-300 border border-red-800 px-2 py-0.5 rounded font-mono font-bold">
+                      Ep {campaignData.plan.current_session} of {campaignData.plan.sessions?.length || 1}
+                    </span>
+                  </div>
+
+                  <div className="space-y-2 text-xs">
+                    <div className="font-bold text-white text-sm line-clamp-1">
+                      {campaignData.plan.theme}
+                    </div>
+                    <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
+                      <span className="text-red-400 font-bold uppercase text-[10px]">Nemesis:</span>
+                      <span className="text-slate-200 font-medium">{campaignData.plan.villain}</span>
+                    </div>
+
+                    {campaignData.context?.session && (
+                      <div className="bg-slate-900/90 rounded-lg p-2.5 border border-slate-800 mt-2 space-y-1">
+                        <div className="text-[10px] uppercase font-bold text-yellow-400 flex items-center justify-between">
+                          <span>Active Mission</span>
+                          <span className="text-slate-400 font-mono">{campaignData.context.session.act}</span>
+                        </div>
+                        <div className="font-medium text-slate-200 text-xs">
+                          {campaignData.context.session.title}
+                        </div>
+                        <div className="text-[11px] text-amber-200/90 leading-relaxed">
+                          Target: {campaignData.context.session.primary_objective}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-1.5 mt-2">
+                      <button
+                        onClick={() => handleOpenCampaignModal('narrator')}
+                        className="bg-gradient-to-r from-red-600 to-amber-600 hover:from-red-500 hover:to-amber-500 text-white text-xs font-bold py-2 px-2.5 rounded-lg flex items-center justify-center gap-1 shadow-md shadow-red-950 transition cursor-pointer"
+                        title="Edit current campaign plan and objectives"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span>Edit Arc</span>
+                      </button>
+
+                      <button
+                        onClick={() => handleOpenCampaignFileManager('load')}
+                        className="bg-slate-900 hover:bg-slate-800 text-yellow-300 hover:text-white border border-slate-700 hover:border-yellow-500/70 text-xs font-bold py-2 px-2.5 rounded-lg flex items-center justify-center gap-1 transition cursor-pointer font-mono"
+                        title="Open Server Campaign Vault to Save or Load JSON campaign files"
+                      >
+                        <FolderOpen className="w-3.5 h-3.5 text-yellow-400" />
+                        <span>JSON Files</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -3950,9 +4129,45 @@ Campaign: ${campaignData?.plan?.theme || 'The Midnight Syndicate Invasion'} (Vil
                 </div>
                 <div className="flex items-center gap-2.5 flex-wrap">
                   <button
+                    onClick={() => handleOpenCampaignModal('campaign')}
+                    className="bg-gradient-to-r from-red-600 to-amber-600 hover:from-red-500 hover:to-amber-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition shadow-lg shadow-red-600/30 border border-red-400 cursor-pointer active:scale-95"
+                    title="Edit Campaign Plan, Arch-Villain, Episodes, and Directives"
+                  >
+                    <Edit3 className="w-4 h-4 text-white" />
+                    <span>Edit Campaign Plan</span>
+                  </button>
+
+                  <button
+                    onClick={() => handleOpenCampaignFileManager('save')}
+                    className="bg-slate-950 hover:bg-slate-800 text-slate-200 hover:text-white px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition border border-slate-700 hover:border-amber-500/60 cursor-pointer active:scale-95 shadow-sm"
+                    title="Save active campaign to a local server JSON data file"
+                  >
+                    <Save className="w-4 h-4 text-amber-400" />
+                    <span>Save to JSON</span>
+                  </button>
+
+                  <button
+                    onClick={() => handleOpenCampaignFileManager('load')}
+                    className="bg-slate-950 hover:bg-slate-800 text-yellow-300 hover:text-yellow-200 px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition border border-yellow-700/70 hover:border-yellow-500 cursor-pointer active:scale-95 shadow-sm"
+                    title="Browse and load stored campaign JSON data files from the server"
+                  >
+                    <FolderOpen className="w-4 h-4 text-yellow-400" />
+                    <span>Load Campaign ({serverSavedCampaigns.length})</span>
+                  </button>
+
+                  <button
+                    onClick={() => window.open('/api/campaign/files/template', '_blank')}
+                    className="bg-slate-950 hover:bg-slate-800 text-blue-300 hover:text-blue-200 px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition border border-blue-800/70 hover:border-blue-500 cursor-pointer active:scale-95 shadow-sm"
+                    title="Download blank campaign JSON template for external planning and importing"
+                  >
+                    <FileJson className="w-4 h-4 text-blue-400" />
+                    <span>Blank Template</span>
+                  </button>
+
+                  <button
                     onClick={handleDownloadEventLog}
                     disabled={isDownloadingLog}
-                    className="bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition shadow-lg shadow-red-600/20 border border-red-400 cursor-pointer active:scale-95"
+                    className="bg-slate-950 hover:bg-slate-800 disabled:opacity-50 text-white px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition border border-slate-700 hover:border-red-500/50 cursor-pointer active:scale-95"
                     title="Download campaign event log and storyline chronicle as a text file (.txt) for record keeping"
                   >
                     {isDownloadingLog ? (
@@ -3963,7 +4178,7 @@ Campaign: ${campaignData?.plan?.theme || 'The Midnight Syndicate Invasion'} (Vil
                     ) : (
                       <>
                         <Download className="w-4 h-4 text-white" />
-                        <span>Download Event Log (.txt)</span>
+                        <span>Event Log (.txt)</span>
                       </>
                     )}
                   </button>
@@ -3989,6 +4204,84 @@ Campaign: ${campaignData?.plan?.theme || 'The Midnight Syndicate Invasion'} (Vil
                 </div>
               )}
 
+              {/* Server Saved Campaigns Quick Vault Bar */}
+              {serverSavedCampaigns.length > 0 && (
+                <div className="mb-6 p-3.5 bg-slate-950/80 border border-slate-800 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-1.5 text-slate-400 font-mono">
+                      <HardDrive className="w-3.5 h-3.5 text-red-500" />
+                      <span className="font-bold uppercase tracking-wider text-[10px] text-slate-300">
+                        Server Local Campaign Files ({serverSavedCampaigns.length})
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => handleOpenCampaignFileManager('load')}
+                      className="text-xs text-yellow-400 hover:underline flex items-center gap-1 font-mono cursor-pointer"
+                    >
+                      <span>Manage Vault / Import .JSON</span>
+                      <ChevronRight className="w-3 h-3" />
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs no-scrollbar">
+                    {serverSavedCampaigns.map((file) => {
+                      const isCurrent =
+                        campaignData.plan?.theme === file.title ||
+                        campaignData.plan?.villain === file.villain;
+
+                      return (
+                        <div
+                          key={file.filename}
+                          className={`shrink-0 flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs transition ${
+                            isCurrent
+                              ? 'bg-red-950/60 border-red-500 text-white font-bold'
+                              : 'bg-slate-900 border-slate-700/80 hover:border-slate-600 text-slate-300'
+                          }`}
+                        >
+                          <FileJson className={`w-3.5 h-3.5 ${isCurrent ? 'text-red-400' : 'text-slate-500'}`} />
+                          <div className="flex flex-col">
+                            <span className="text-[11px] leading-tight font-medium max-w-[170px] truncate">
+                              {file.title}
+                            </span>
+                            <span className="text-[9px] text-slate-400 font-mono">
+                              vs {file.villain}
+                            </span>
+                          </div>
+
+                          {isCurrent ? (
+                            <span className="bg-yellow-400 text-slate-950 text-[9px] font-black px-1.5 py-0.2 rounded font-mono ml-1">
+                              ACTIVE
+                            </span>
+                          ) : (
+                            <button
+                              onClick={async () => {
+                                try {
+                                  const res = await fetch('/api/campaign/files/load', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ filename: file.filename }),
+                                  });
+                                  const data = await res.json();
+                                  if (data.plan) {
+                                    handleCampaignLoadedFromFile(data);
+                                  }
+                                } catch (e) {
+                                  console.error(e);
+                                }
+                              }}
+                              className="bg-slate-800 hover:bg-red-600 text-slate-200 hover:text-white px-2 py-0.5 rounded text-[10px] font-mono transition cursor-pointer ml-1"
+                              title={`Load ${file.title}`}
+                            >
+                              Load
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* Sessions Roadmap */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                 {campaignData.plan?.sessions.map((s: any) => (
@@ -4004,7 +4297,18 @@ Campaign: ${campaignData?.plan?.theme || 'The Midnight Syndicate Invasion'} (Vil
                   >
                     <div className="flex items-center justify-between text-xs font-bold mb-1">
                       <span className="text-yellow-400">{s.act}</span>
-                      <span className="text-[10px] uppercase font-mono">{s.status}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] uppercase font-mono">{s.status}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenCampaignModal('campaign', s.session_number)}
+                          className="text-[10px] text-slate-400 hover:text-yellow-400 flex items-center gap-1 bg-slate-900/90 hover:bg-slate-800 px-2 py-0.5 rounded border border-slate-700/60 transition cursor-pointer"
+                          title={`Edit Episode ${s.session_number}: ${s.title}`}
+                        >
+                          <Edit3 className="w-3 h-3" />
+                          <span>Edit</span>
+                        </button>
+                      </div>
                     </div>
                     <h4 className="font-comic text-lg text-white mb-2">{s.title}</h4>
                     <p className="text-xs text-slate-400 leading-relaxed mb-3">{s.briefing}</p>
@@ -4403,6 +4707,25 @@ Campaign: ${campaignData?.plan?.theme || 'The Midnight Syndicate Invasion'} (Vil
           </div>
         </div>
       )}
+
+      {/* Campaign Plan Edit Modal (Accessible from Campaign Screen or Narrator AI Screen) */}
+      <CampaignEditModal
+        isOpen={isCampaignModalOpen}
+        onClose={() => setIsCampaignModalOpen(false)}
+        initialPlan={campaignData?.plan}
+        onSaveSuccess={handleSaveCampaignSuccess}
+        sourceScreen={campaignModalSource}
+        initialEpisodeToEdit={campaignModalEpisode}
+      />
+
+      {/* Campaign File Manager Modal (Save / Load local JSON files on the server) */}
+      <CampaignFileManagerModal
+        isOpen={isCampaignFileManagerOpen}
+        onClose={() => setIsCampaignFileManagerOpen(false)}
+        activePlan={campaignData?.plan || null}
+        onCampaignLoaded={handleCampaignLoadedFromFile}
+        initialTab={campaignFileManagerInitialTab}
+      />
     </div>
   );
 }
