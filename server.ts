@@ -34,7 +34,7 @@ export function resolveGeminiKey(): string {
 resolveGeminiKey();
 import { resolveD616Roll, buildD616Result } from './src/core/d616.ts';
 import { rulesDatabase } from './src/core/rules.ts';
-import { characterRoster, Character } from './src/core/character.ts';
+import { characterRoster, Character, AVERAGE_PERSON_TEMPLATE, NEW_HERO_TEMPLATE } from './src/core/character.ts';
 import { combatTracker } from './src/core/combat.ts';
 import { campaignManager } from './src/core/campaign.ts';
 import { narratorEngine, AVAILABLE_MODELS, NARRATOR_ROLES } from './src/core/narrator.ts';
@@ -92,6 +92,91 @@ app.get('/api/rules/index', (_req: Request, res: Response) => {
 // ----------------------------------------------------
 app.get('/api/characters', (_req: Request, res: Response) => {
   res.json({ characters: characterRoster.getAllSheets() });
+});
+
+// Character Statblock Templates (Average Citizen & New Hero)
+app.get('/api/characters/templates/average-person', (req: Request, res: Response) => {
+  if (req.query.download === 'true') {
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="average_citizen_template.json"');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+    return res.send(JSON.stringify(AVERAGE_PERSON_TEMPLATE, null, 2));
+  }
+  res.json(AVERAGE_PERSON_TEMPLATE);
+});
+
+app.get('/api/characters/templates/hero', (req: Request, res: Response) => {
+  if (req.query.download === 'true') {
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="hero_template.json"');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+    return res.send(JSON.stringify(NEW_HERO_TEMPLATE, null, 2));
+  }
+  res.json(NEW_HERO_TEMPLATE);
+});
+
+// All Characters Statblock Export
+app.get('/api/characters/export/all', (req: Request, res: Response) => {
+  const statblocks = characterRoster.getAllStatblocks();
+  if (req.query.download === 'true') {
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="marvel_multiverse_roster.json"');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+    return res.send(JSON.stringify(statblocks, null, 2));
+  }
+  res.json({ count: statblocks.length, characters: statblocks });
+});
+
+// Character Import Endpoint (supports single statblock or array of statblocks)
+app.post('/api/characters/import', (req: Request, res: Response) => {
+  try {
+    const payload = req.body;
+    const items = Array.isArray(payload)
+      ? payload
+      : Array.isArray(payload?.characters)
+      ? payload.characters
+      : [payload?.statblock || payload];
+
+    const importedSheets = [];
+    for (const item of items) {
+      if (!item || typeof item !== 'object' || !item.name) continue;
+      const sheet = characterRoster.importStatblock(item);
+      importedSheets.push(sheet);
+    }
+
+    if (importedSheets.length === 0) {
+      return res.status(400).json({ error: 'No valid character statblock found. Ensure the JSON includes at least "name" and adhering fields.' });
+    }
+
+    if (req.body?.setActive && importedSheets[0]) {
+      narratorEngine.setActiveCharacter(importedSheets[0].name);
+    }
+
+    res.status(201).json({
+      success: true,
+      count: importedSheets.length,
+      imported: importedSheets,
+      characters: characterRoster.getAllSheets(),
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Single Character Statblock Export
+app.get('/api/characters/:name/statblock', (req: Request, res: Response) => {
+  const name = Array.isArray(req.params.name) ? req.params.name[0] : req.params.name;
+  const statblock = characterRoster.getStatblock(name);
+  if (!statblock) return res.status(404).json({ error: `Character '${name}' not found` });
+
+  if (req.query.download === 'true') {
+    const safeName = name.toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeName}_statblock.json"`);
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+    return res.send(JSON.stringify(statblock, null, 2));
+  }
+  res.json(statblock);
 });
 
 app.get('/api/characters/:name', (req: Request, res: Response) => {

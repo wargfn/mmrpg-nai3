@@ -6,10 +6,99 @@
 export type AbilityName = 'melee' | 'agility' | 'resilience' | 'vigilance' | 'ego' | 'logic';
 export const ABILITY_FIELDS: AbilityName[] = ['melee', 'agility', 'resilience', 'vigilance', 'ego', 'logic'];
 
+export interface StatblockAbility {
+  score: number;
+  edge: number;
+  defense_score: number;
+  'non-combat_checks': number;
+}
+
+export interface StatblockFormat {
+  name: string;
+  alias: string;
+  rank: string | number;
+  tier: number;
+  is_npc: boolean;
+  background: string;
+  traits: string[];
+  abilities: {
+    melee: StatblockAbility;
+    agility: StatblockAbility;
+    resilience: StatblockAbility;
+    vigilance: StatblockAbility;
+    ego: StatblockAbility;
+    logic: StatblockAbility;
+  };
+  powers: (string | { name: string; [key: string]: any })[];
+  health: { score: number; damage_reduction: number };
+  focus: { score: number; damage_reduction: number };
+  karma: number;
+  speed: { run: number; climb: number; swim: number; jump: number };
+  initiative_mod: number;
+  tags: string[];
+  equipment: (string | { name: string; [key: string]: any })[];
+}
+
+export const AVERAGE_PERSON_TEMPLATE: StatblockFormat = {
+  name: "Average Citizen",
+  alias: "",
+  rank: "rookie",
+  tier: 1,
+  is_npc: true,
+  background: "Average Civilian",
+  traits: [],
+  abilities: {
+    melee:      { score: 0, edge: 0, defense_score: 10, "non-combat_checks": 0 },
+    agility:    { score: 0, edge: 0, defense_score: 10, "non-combat_checks": 0 },
+    resilience: { score: 0, edge: 0, defense_score: 10, "non-combat_checks": 0 },
+    vigilance:  { score: 0, edge: 0, defense_score: 10, "non-combat_checks": 0 },
+    ego:        { score: 0, edge: 0, defense_score: 10, "non-combat_checks": 0 },
+    logic:      { score: 0, edge: 0, defense_score: 10, "non-combat_checks": 0 }
+  },
+  powers: [],
+  health: { score: 10, damage_reduction: 0 },
+  focus: { score: 10, damage_reduction: 0 },
+  karma: 0,
+  speed: { run: 5, climb: 3, swim: 3, jump: 3 },
+  initiative_mod: 0,
+  tags: ["average", "civilian"],
+  equipment: []
+};
+
+export const NEW_HERO_TEMPLATE: StatblockFormat = {
+  name: "New Hero",
+  alias: "Secret Identity",
+  rank: 1,
+  tier: 1,
+  is_npc: false,
+  background: "Heroic Origin",
+  traits: ["Heroic Will", "Quick Reflexes"],
+  abilities: {
+    melee:      { score: 2, edge: 0, defense_score: 12, "non-combat_checks": 0 },
+    agility:    { score: 2, edge: 0, defense_score: 12, "non-combat_checks": 0 },
+    resilience: { score: 2, edge: 0, defense_score: 12, "non-combat_checks": 0 },
+    vigilance:  { score: 2, edge: 0, defense_score: 12, "non-combat_checks": 0 },
+    ego:        { score: 2, edge: 0, defense_score: 12, "non-combat_checks": 0 },
+    logic:      { score: 2, edge: 0, defense_score: 12, "non-combat_checks": 0 }
+  },
+  powers: ["Signature Power Set"],
+  health: { score: 50, damage_reduction: 0 },
+  focus: { score: 50, damage_reduction: 0 },
+  karma: 1,
+  speed: { run: 5, climb: 3, swim: 3, jump: 3 },
+  initiative_mod: 2,
+  tags: ["Heroic", "Adventurer"],
+  equipment: ["Hero Gear"]
+};
+
 export interface CharacterSheet {
   name: string;
+  alias?: string;
   archetype: string;
   rank: number;
+  tier?: number;
+  is_npc?: boolean;
+  background?: string;
   melee: number;
   agility: number;
   resilience: number;
@@ -21,6 +110,7 @@ export interface CharacterSheet {
   traits: string[];
   tags: string[];
   power_sets: (string | { name: string; [key: string]: any })[];
+  powers?: (string | { name: string; [key: string]: any })[];
   max_health: number;
   current_health: number;
   max_focus: number;
@@ -38,6 +128,8 @@ export interface CharacterSheet {
   initiative_modifier: number;
   running_speed: number;
   damage_multiplier: number;
+  speed?: { run: number; climb: number; swim: number; jump: number };
+  equipment?: (string | { name: string; [key: string]: any })[];
 }
 
 export const BASE_ARCHETYPES: Record<string, { playstyle: string; base: [number, number, number, number, number, number] }> = {
@@ -51,8 +143,12 @@ export const BASE_ARCHETYPES: Record<string, { playstyle: string; base: [number,
 
 export class Character {
   name: string;
+  alias: string;
   archetype: string;
   rank: number;
+  tier: number;
+  is_npc: boolean;
+  background: string;
   melee: number;
   agility: number;
   resilience: number;
@@ -70,11 +166,17 @@ export class Character {
   current_focus: number;
   karma: number;
   conditions: string[];
+  speed?: { run: number; climb: number; swim: number; jump: number };
+  equipment?: (string | any)[];
 
-  constructor(init: Partial<CharacterSheet> & { name: string; rank: number }) {
+  constructor(init: Partial<CharacterSheet> & { name: string; rank?: number; tier?: number; is_npc?: boolean; alias?: string; background?: string; speed?: any; equipment?: any[] }) {
     this.name = init.name.trim();
+    this.alias = init.alias || '';
     this.archetype = init.archetype || 'Polymath';
-    this.rank = Math.max(1, Math.min(6, init.rank || 1));
+    this.rank = Math.max(1, Math.min(6, init.rank || init.tier || 1));
+    this.tier = init.tier || this.rank;
+    this.is_npc = Boolean(init.is_npc);
+    this.background = init.background || '';
     this.melee = Math.max(0, init.melee ?? 2);
     this.agility = Math.max(0, init.agility ?? 2);
     this.resilience = Math.max(1, init.resilience ?? 2);
@@ -82,11 +184,13 @@ export class Character {
     this.ego = Math.max(0, init.ego ?? 2);
     this.logic = Math.max(0, init.logic ?? 2);
 
-    this.origin = init.origin || 'Special Origin';
-    this.occupation = init.occupation || 'Hero';
+    this.origin = init.origin || (this.background ? this.background.split('•')[0].trim() : 'Special Origin');
+    this.occupation = init.occupation || (this.is_npc ? 'Civilian' : 'Hero');
     this.traits = Array.from(new Set(init.traits || []));
     this.tags = Array.from(new Set(init.tags || []));
-    this.power_sets = init.power_sets || [];
+    this.power_sets = init.power_sets || init.powers || [];
+    this.speed = init.speed;
+    this.equipment = init.equipment || [];
 
     this.max_health = init.max_health ?? Math.max(25, this.resilience * 25);
     this.max_focus = init.max_focus ?? Math.max(25, this.vigilance * 25);
@@ -234,8 +338,12 @@ export class Character {
   toSheet(): CharacterSheet {
     return {
       name: this.name,
+      alias: this.alias,
       archetype: this.archetype,
       rank: this.rank,
+      tier: this.tier,
+      is_npc: this.is_npc,
+      background: this.background || `${this.origin} • ${this.occupation}`,
       melee: this.melee,
       agility: this.agility,
       resilience: this.resilience,
@@ -247,6 +355,7 @@ export class Character {
       traits: [...this.traits],
       tags: [...this.tags],
       power_sets: [...this.power_sets],
+      powers: [...this.power_sets],
       max_health: this.max_health,
       current_health: this.current_health,
       max_focus: this.max_focus,
@@ -257,7 +366,13 @@ export class Character {
       initiative_modifier: this.initiativeModifier,
       running_speed: this.runningSpeed,
       damage_multiplier: this.damageMultiplier,
+      speed: this.speed || { run: this.runningSpeed, climb: 3, swim: 3, jump: 3 },
+      equipment: this.equipment ? [...this.equipment] : [],
     };
+  }
+
+  toStatblock(): StatblockFormat {
+    return characterToStatblock(this);
   }
 }
 
@@ -439,6 +554,216 @@ export class CharacterRoster {
     char.setKarma(value);
     return char.toSheet();
   }
+
+  public getStatblock(name: string): StatblockFormat | undefined {
+    const char = this.getCharacter(name);
+    return char ? characterToStatblock(char) : undefined;
+  }
+
+  public getAllStatblocks(): StatblockFormat[] {
+    return Array.from(this.roster.values()).map(c => characterToStatblock(c));
+  }
+
+  public importStatblock(raw: any): CharacterSheet {
+    const char = statblockToCharacter(raw);
+    return this.registerCharacter(char);
+  }
+}
+
+export function characterToStatblock(char: Character | CharacterSheet): StatblockFormat {
+  const sheet = typeof (char as any).toSheet === 'function' ? (char as Character).toSheet() : (char as CharacterSheet);
+
+  const meleeScore = sheet.melee ?? 0;
+  const agilityScore = sheet.agility ?? 0;
+  const resilienceScore = sheet.resilience ?? 0;
+  const vigilanceScore = sheet.vigilance ?? 0;
+  const egoScore = sheet.ego ?? 0;
+  const logicScore = sheet.logic ?? 0;
+
+  const defenses = sheet.defenses || {
+    melee_defense: 10 + meleeScore,
+    agility_defense: 10 + agilityScore,
+    resilience_defense: 10 + resilienceScore,
+    vigilance_defense: 10 + vigilanceScore,
+    ego_defense: 10 + egoScore,
+    logic_defense: 10 + logicScore,
+  };
+
+  const speed = sheet.speed || {
+    run: sheet.running_speed ?? (5 + Math.floor(agilityScore / 5)),
+    climb: 3,
+    swim: 3,
+    jump: 3,
+  };
+
+  let rankVal: string | number = sheet.rank;
+  if (sheet.rank === 1 && sheet.is_npc) {
+    rankVal = 'rookie';
+  }
+
+  return {
+    name: sheet.name,
+    alias: sheet.alias || '',
+    rank: rankVal,
+    tier: sheet.tier ?? (typeof sheet.rank === 'number' ? sheet.rank : 1),
+    is_npc: sheet.is_npc ?? false,
+    background: sheet.background || `${sheet.origin || ''}${sheet.occupation ? ` • ${sheet.occupation}` : ''}`.trim() || 'Average Civilian',
+    traits: Array.isArray(sheet.traits) ? [...sheet.traits] : [],
+    abilities: {
+      melee: {
+        score: meleeScore,
+        edge: 0,
+        defense_score: defenses.melee_defense ?? (10 + meleeScore),
+        'non-combat_checks': 0,
+      },
+      agility: {
+        score: agilityScore,
+        edge: 0,
+        defense_score: defenses.agility_defense ?? (10 + agilityScore),
+        'non-combat_checks': 0,
+      },
+      resilience: {
+        score: resilienceScore,
+        edge: 0,
+        defense_score: defenses.resilience_defense ?? (10 + resilienceScore),
+        'non-combat_checks': 0,
+      },
+      vigilance: {
+        score: vigilanceScore,
+        edge: 0,
+        defense_score: defenses.vigilance_defense ?? (10 + vigilanceScore),
+        'non-combat_checks': 0,
+      },
+      ego: {
+        score: egoScore,
+        edge: 0,
+        defense_score: defenses.ego_defense ?? (10 + egoScore),
+        'non-combat_checks': 0,
+      },
+      logic: {
+        score: logicScore,
+        edge: 0,
+        defense_score: defenses.logic_defense ?? (10 + logicScore),
+        'non-combat_checks': 0,
+      },
+    },
+    powers: Array.isArray(sheet.powers) ? [...sheet.powers] : Array.isArray(sheet.power_sets) ? [...sheet.power_sets] : [],
+    health: {
+      score: sheet.max_health ?? (resilienceScore > 0 ? resilienceScore * 25 : 10),
+      damage_reduction: 0,
+    },
+    focus: {
+      score: sheet.max_focus ?? (vigilanceScore > 0 ? vigilanceScore * 25 : 10),
+      damage_reduction: 0,
+    },
+    karma: sheet.karma ?? (typeof sheet.rank === 'number' ? sheet.rank : 0),
+    speed,
+    initiative_mod: sheet.initiative_modifier ?? sheet.vigilance ?? 0,
+    tags: Array.isArray(sheet.tags) ? [...sheet.tags] : [],
+    equipment: Array.isArray(sheet.equipment) ? [...sheet.equipment] : [],
+  };
+}
+
+export function statblockToCharacter(raw: any): Character {
+  if (!raw || typeof raw !== 'object') {
+    throw new Error('Invalid statblock data: expected a JSON object.');
+  }
+
+  const name = String(raw.name || '').trim();
+  if (!name) {
+    throw new Error('Invalid statblock: missing character "name".');
+  }
+
+  // Parse Rank
+  let rankNum = 1;
+  if (typeof raw.rank === 'number') {
+    rankNum = Math.max(1, Math.min(6, raw.rank));
+  } else if (typeof raw.rank === 'string') {
+    const lower = raw.rank.toLowerCase();
+    if (lower === 'rookie') rankNum = 1;
+    else if (lower === 'street' || lower === 'standard') rankNum = 2;
+    else if (lower === 'veteran') rankNum = 3;
+    else if (lower === 'champion' || lower === 'icon') rankNum = 4;
+    else if (lower === 'legendary') rankNum = 5;
+    else if (lower === 'cosmic') rankNum = 6;
+    else {
+      const parsed = parseInt(raw.rank, 10);
+      if (!isNaN(parsed) && parsed >= 1 && parsed <= 6) rankNum = parsed;
+      else if (typeof raw.tier === 'number' && raw.tier >= 1 && raw.tier <= 6) rankNum = raw.tier;
+    }
+  } else if (typeof raw.tier === 'number' && raw.tier >= 1 && raw.tier <= 6) {
+    rankNum = raw.tier;
+  }
+
+  // Extract ability scores
+  const abilities = raw.abilities || {};
+  const melee = Number(abilities.melee?.score ?? raw.melee ?? 0);
+  const agility = Number(abilities.agility?.score ?? raw.agility ?? 0);
+  const resilience = Number(abilities.resilience?.score ?? raw.resilience ?? 0);
+  const vigilance = Number(abilities.vigilance?.score ?? raw.vigilance ?? 0);
+  const ego = Number(abilities.ego?.score ?? raw.ego ?? 0);
+  const logic = Number(abilities.logic?.score ?? raw.logic ?? 0);
+
+  // Health and Focus
+  const healthScore = Number(raw.health?.score ?? raw.max_health ?? (resilience > 0 ? resilience * 25 : 10));
+  const focusScore = Number(raw.focus?.score ?? raw.max_focus ?? (vigilance > 0 ? vigilance * 25 : 10));
+
+  // Background, origin & occupation
+  const background = String(raw.background || '').trim();
+  let origin = raw.origin || background || 'Civilian Origin';
+  let occupation = raw.occupation || (raw.is_npc ? 'Civilian' : 'Hero');
+  if (background && !raw.origin && !raw.occupation) {
+    const parts = background.split('•').map((s: string) => s.trim());
+    if (parts.length >= 2) {
+      origin = parts[0];
+      occupation = parts[1];
+    }
+  }
+
+  // Archetype determination
+  let archetype = raw.archetype;
+  if (!archetype) {
+    if (raw.is_npc) archetype = 'Civilian';
+    else if (melee >= 5) archetype = 'Striker';
+    else if (resilience >= 5) archetype = 'Brawler';
+    else if (agility >= 5) archetype = 'Way-Watcher';
+    else if (ego >= 5) archetype = 'Blaster';
+    else archetype = 'Polymath';
+  }
+
+  const traits = Array.isArray(raw.traits) ? raw.traits : [];
+  const tags = Array.isArray(raw.tags) ? raw.tags : [];
+  const powers = Array.isArray(raw.powers) ? raw.powers : Array.isArray(raw.power_sets) ? raw.power_sets : [];
+  const equipment = Array.isArray(raw.equipment) ? raw.equipment : [];
+  const karma = typeof raw.karma === 'number' ? Math.max(0, raw.karma) : (rankNum || 1);
+
+  return new Character({
+    name,
+    archetype,
+    rank: rankNum,
+    melee,
+    agility,
+    resilience,
+    vigilance,
+    ego,
+    logic,
+    origin,
+    occupation,
+    traits,
+    tags,
+    power_sets: powers,
+    max_health: healthScore,
+    current_health: healthScore,
+    max_focus: focusScore,
+    current_focus: focusScore,
+    karma,
+    alias: raw.alias || '',
+    tier: typeof raw.tier === 'number' ? raw.tier : rankNum,
+    is_npc: Boolean(raw.is_npc),
+    background: background || `${origin} • ${occupation}`,
+    speed: raw.speed,
+    equipment,
+  });
 }
 
 export const characterRoster = new CharacterRoster();

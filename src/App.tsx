@@ -52,6 +52,7 @@ import { LoginScreen } from './components/LoginScreen.tsx';
 import { UsersManagementView } from './components/UsersManagementView.tsx';
 import { CampaignEditModal } from './components/CampaignEditModal.tsx';
 import { CampaignFileManagerModal } from './components/CampaignFileManagerModal.tsx';
+import { CharacterImportModal } from './components/CharacterImportModal.tsx';
 import { CampaignPlan } from './core/campaign.ts';
 
 interface ChatMessage {
@@ -252,8 +253,9 @@ export default function App() {
     fetchServerCampaignFiles();
   };
 
-  // Character creator state
+  // Character creator & import state
   const [showCreatorModal, setShowCreatorModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [newCharName, setNewCharName] = useState('');
   const [newCharArchetype, setNewCharArchetype] = useState('Striker');
   const [newCharRank, setNewCharRank] = useState(3);
@@ -1085,6 +1087,75 @@ export default function App() {
       }
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const handleDownloadHeroStatblock = async (char: CharacterSheet) => {
+    try {
+      const res = await fetch(`/api/characters/${encodeURIComponent(char.name)}/statblock`);
+      const data = await res.json();
+      const safeName = char.name.toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${safeName}_statblock.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('Error downloading statblock:', e);
+    }
+  };
+
+  const handleDownloadAllStatblocks = async () => {
+    try {
+      const res = await fetch('/api/characters/export/all');
+      const data = await res.json();
+      const blob = new Blob([JSON.stringify(data.characters || data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'marvel_multiverse_roster.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('Error downloading all statblocks:', e);
+    }
+  };
+
+  const handleDownloadTemplate = async (type: 'average' | 'hero' = 'average') => {
+    try {
+      const endpoint = type === 'average'
+        ? '/api/characters/templates/average-person'
+        : '/api/characters/templates/hero';
+      const filename = type === 'average' ? 'average_citizen_template.json' : 'hero_template.json';
+      const res = await fetch(endpoint);
+      const data = await res.json();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('Error downloading template:', e);
+    }
+  };
+
+  const handleCharacterImportSuccess = (importedList: any[], setActive: boolean) => {
+    fetchCharacters();
+    if (setActive && importedList && importedList.length > 0) {
+      const firstChar = importedList[0];
+      if (firstChar?.name) {
+        handleSelectActiveChar(firstChar.name);
+      }
     }
   };
 
@@ -2329,13 +2400,6 @@ Campaign: ${campaignData?.plan?.theme || 'The Midnight Syndicate Invasion'} (Vil
                   ⚙️ Custom Roll & Report
                 </button>
                 <button
-                  onClick={() => handleSendMessage('/rules index')}
-                  className="shrink-0 bg-blue-950/50 hover:bg-blue-900/60 text-blue-300 border border-blue-800/80 px-2.5 py-1 rounded-full transition flex items-center gap-1 font-mono"
-                  title="Ask Narrator AI for rules index summary"
-                >
-                  📖 /rules index
-                </button>
-                <button
                   onClick={() => handleOpenCampaignModal('narrator')}
                   className="shrink-0 bg-red-950/60 hover:bg-red-900/80 text-red-300 border border-red-800/80 px-2.5 py-1 rounded-full transition flex items-center gap-1 font-semibold text-xs cursor-pointer"
                   title="Edit active campaign arc and mission objectives"
@@ -2349,7 +2413,7 @@ Campaign: ${campaignData?.plan?.theme || 'The Midnight Syndicate Invasion'} (Vil
                   title="Open full interactive Rules Index & Catalog"
                 >
                   <BookOpen className="w-3.5 h-3.5 text-red-400" />
-                  <span>Browse Rules Index</span>
+                  <span>Rules Index</span>
                 </button>
               </div>
 
@@ -3245,19 +3309,42 @@ Campaign: ${campaignData?.plan?.theme || 'The Midnight Syndicate Invasion'} (Vil
         {/* TAB 4: CHARACTER ROSTER */}
         {activeTab === 'characters' && (
           <div className="p-6 max-w-6xl mx-auto h-full overflow-y-auto space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="font-comic text-3xl text-red-500">CHARACTER ROSTER</h2>
                 <p className="text-xs text-slate-400">
-                  Pre-configured Marvel Heroes & Custom Characters (with archetype templates)
+                  Pre-configured Marvel Heroes & Custom Characters (with schema-validated import/export)
                 </p>
               </div>
-              <button
-                onClick={() => setShowCreatorModal(true)}
-                className="bg-red-600 hover:bg-red-500 text-white font-bold text-xs px-4 py-2 rounded-lg flex items-center gap-1.5 shadow"
-              >
-                <Plus className="w-4 h-4" /> Create Character
-              </button>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={() => setShowImportModal(true)}
+                  className="bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs px-3.5 py-2 rounded-lg flex items-center gap-1.5 shadow transition cursor-pointer"
+                  title="Import character statblock adhering to Average Citizen schema"
+                >
+                  <Upload className="w-4 h-4" /> Import Character
+                </button>
+                <button
+                  onClick={() => handleDownloadTemplate('average')}
+                  className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs px-3 py-2 rounded-lg flex items-center gap-1.5 shadow transition"
+                  title="Download Average Person template JSON adhering to required schema"
+                >
+                  <FileText className="w-4 h-4 text-blue-400" /> Template JSON
+                </button>
+                <button
+                  onClick={handleDownloadAllStatblocks}
+                  className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs px-3 py-2 rounded-lg flex items-center gap-1.5 shadow transition"
+                  title="Download all characters in roster as a single JSON file"
+                >
+                  <Download className="w-4 h-4 text-emerald-400" /> Export All Heroes
+                </button>
+                <button
+                  onClick={() => setShowCreatorModal(true)}
+                  className="bg-red-600 hover:bg-red-500 text-white font-bold text-xs px-3.5 py-2 rounded-lg flex items-center gap-1.5 shadow transition cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" /> Create Character
+                </button>
+              </div>
             </div>
 
             {/* Character Cards Grid */}
@@ -3360,16 +3447,26 @@ Campaign: ${campaignData?.plan?.theme || 'The Midnight Syndicate Invasion'} (Vil
                       </div>
                     </div>
 
-                    <button
-                      onClick={() => handleSelectActiveChar(char.name)}
-                      className={`w-full py-2 rounded-lg text-xs font-bold transition ${
-                        isActive
-                          ? 'bg-slate-800 text-slate-400 cursor-default'
-                          : 'bg-red-600 hover:bg-red-500 text-white'
-                      }`}
-                    >
-                      {isActive ? 'Current Hero' : 'Select as Active Hero'}
-                    </button>
+                    <div className="flex items-center gap-2 mt-2">
+                      <button
+                        onClick={() => handleSelectActiveChar(char.name)}
+                        className={`flex-1 py-2 rounded-lg text-xs font-bold transition ${
+                          isActive
+                            ? 'bg-slate-800 text-slate-400 cursor-default'
+                            : 'bg-red-600 hover:bg-red-500 text-white'
+                        }`}
+                      >
+                        {isActive ? 'Current Hero' : 'Select as Active Hero'}
+                      </button>
+                      <button
+                        onClick={() => handleDownloadHeroStatblock(char)}
+                        className="px-2.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-xs font-semibold flex items-center justify-center gap-1 transition"
+                        title={`Download ${char.name} statblock JSON adhering to schema`}
+                      >
+                        <Download className="w-4 h-4 text-amber-400" />
+                        <span className="hidden sm:inline">JSON</span>
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -4725,6 +4822,13 @@ Campaign: ${campaignData?.plan?.theme || 'The Midnight Syndicate Invasion'} (Vil
         activePlan={campaignData?.plan || null}
         onCampaignLoaded={handleCampaignLoadedFromFile}
         initialTab={campaignFileManagerInitialTab}
+      />
+
+      {/* Character Import Modal */}
+      <CharacterImportModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onImportSuccess={handleCharacterImportSuccess}
       />
     </div>
   );
