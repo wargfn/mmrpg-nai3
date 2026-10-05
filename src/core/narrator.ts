@@ -94,17 +94,17 @@ export const NARRATOR_ROLES: Record<string, NarratorRole> = {
 };
 
 export const AVAILABLE_MODELS = [
-  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', badge: 'General / Recommended', desc: 'Fast, responsive storytelling and roleplay' },
-  { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite', badge: 'Fastest', desc: 'Ultra-low latency for quick action resolutions' },
-  { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', badge: 'Complex Reasoning', desc: 'Deep campaign lore, intricate mysteries, and tactical depth' },
-  { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', badge: 'Stable Alternative', desc: 'High reliability multi-turn generation' },
+  { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', badge: 'General / Recommended', desc: 'Fast, responsive storytelling and roleplay' },
+  { id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash Lite', badge: 'Fastest', desc: 'Ultra-low latency for quick action resolutions' },
+  { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro Preview', badge: 'Complex Reasoning', desc: 'Deep campaign lore, intricate mysteries, and tactical depth' },
+  { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash', badge: 'Omni Alternative', desc: 'Advanced multi-modal capabilities' },
 ];
 
 export class NarratorEngine {
   private messages: ChatMessage[] = [];
   private activeCharacterName: string = 'Spider-Man';
   private activeRoleId: string = 'stan_lee';
-  private modelName: string = 'gemini-2.5-flash';
+  private modelName: string = 'gemini-3.5-flash';
   private aiClient: GoogleGenAI | null = null;
 
   constructor() {
@@ -727,7 +727,7 @@ ${contextPrompt}`;
           contents.push({ role: 'user', parts: [{ text: trimmed }] });
         }
 
-        const candidateModels = [this.modelName, 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro'].filter(
+        const candidateModels = [this.modelName, 'gemini-3.5-flash', 'gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-3.1-pro-preview'].filter(
           (m, i, arr) => arr.indexOf(m) === i
         );
 
@@ -975,10 +975,10 @@ ${contextPrompt}`;
 
           const candidateModels = [
             this.modelName,
-            'gemini-2.5-flash',
-            'gemini-2.0-flash',
-            'gemini-2.5-flash-lite',
-            'gemini-2.5-pro',
+            'gemini-3.5-flash',
+            'gemini-3.8-flash',
+            'gemini-3.1-flash-lite',
+            'gemini-3.1-pro-preview',
           ].filter((m, i, arr) => arr.indexOf(m) === i);
 
           for (const candidate of candidateModels) {

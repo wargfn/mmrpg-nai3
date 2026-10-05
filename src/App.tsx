@@ -130,16 +130,16 @@ export default function App() {
   const [activeCharName, setActiveCharName] = useState('Spider-Man');
   const [characters, setCharacters] = useState<CharacterSheet[]>([]);
   const [showContext, setShowContext] = useState(false);
-  const [selectedModel, setSelectedModel] = useState<string>('gemini-2.5-flash');
+  const [selectedModel, setSelectedModel] = useState<string>('gemini-3.5-flash');
   const [selectedRole, setSelectedRole] = useState<string>('stan_lee');
   const [narratorFontSize, setNarratorFontSize] = useState<'xs' | 'sm' | 'base' | 'lg'>('sm');
   const [narratorOnline, setNarratorOnline] = useState<boolean>(true);
   const [apiKeyStatus, setApiKeyStatus] = useState<any>(null);
   const [availableModels, setAvailableModels] = useState<any[]>([
-    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', badge: 'General Tasks', desc: 'Balanced & responsive' },
-    { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite', badge: 'Fast Tasks', desc: 'Ultra-fast reactions' },
-    { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', badge: 'Complex Tasks', desc: 'Deep lore & tactics' },
-    { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', badge: 'Stable Tasks', desc: 'High reliability' },
+    { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', badge: 'General Tasks', desc: 'Balanced & responsive' },
+    { id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash Lite', badge: 'Fast Tasks', desc: 'Ultra-fast reactions' },
+    { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro Preview', badge: 'Complex Tasks', desc: 'Deep lore & tactics' },
+    { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash', badge: 'Omni Tasks', desc: 'Advanced multi-modal capabilities' },
   ]);
   const [availableRoles, setAvailableRoles] = useState<any[]>([
     { id: 'stan_lee', name: 'Stan Lee', icon: '🎙️', tagline: 'The True Believer GM' },
@@ -2009,17 +2009,17 @@ export default function App() {
                       onChange={(e) => handleModelChange(e.target.value)}
                       className="bg-transparent text-xs font-semibold text-white focus:outline-none cursor-pointer"
                     >
-                      <option value="gemini-2.5-flash" className="bg-slate-900 text-slate-100">
-                        Gemini 2.5 Flash (General)
+                      <option value="gemini-3.5-flash" className="bg-slate-900 text-slate-100">
+                        Gemini 3.5 Flash (General)
                       </option>
-                      <option value="gemini-2.5-flash-lite" className="bg-slate-900 text-slate-100">
-                        Gemini 2.5 Flash Lite (Fastest)
+                      <option value="gemini-3.1-flash-lite" className="bg-slate-900 text-slate-100">
+                        Gemini 3.1 Flash Lite (Fastest)
                       </option>
-                      <option value="gemini-2.5-pro" className="bg-slate-900 text-slate-100">
-                        Gemini 2.5 Pro (Complex)
+                      <option value="gemini-3.1-pro-preview" className="bg-slate-900 text-slate-100">
+                        Gemini 3.1 Pro Preview (Complex)
                       </option>
-                      <option value="gemini-2.0-flash" className="bg-slate-900 text-slate-100">
-                        Gemini 2.0 Flash (Stable)
+                      <option value="gemini-3.8-flash" className="bg-slate-900 text-slate-100">
+                        Gemini 3.8 Flash (Omni)
                       </option>
                     </select>
                   </div>
@@ -2276,13 +2276,13 @@ Campaign: ${campaignData?.plan?.theme || 'The Midnight Syndicate Invasion'} (Vil
                   <div className="flex items-center gap-2.5 text-yellow-400 text-xs py-3 px-2 bg-slate-900/60 rounded-lg border border-yellow-500/20 max-w-md animate-pulse">
                     <Sparkles className="w-4 h-4 animate-spin text-yellow-400" />
                     <span>
-                      {selectedModel === 'gemini-2.5-pro'
-                        ? 'Gemini 2.5 Pro is calculating multiversal tactics & narrative...'
-                        : selectedModel === 'gemini-2.5-flash-lite'
-                        ? 'Gemini 2.5 Flash Lite is responding rapidly...'
-                        : selectedModel === 'gemini-2.0-flash'
-                        ? 'Gemini 2.0 Flash is spinning up the multiverse...'
-                        : 'Gemini 2.5 Flash is resolving the scene narrative...'}
+                      {selectedModel === 'gemini-3.1-pro-preview'
+                        ? 'Gemini 3.1 Pro is calculating multiversal tactics & narrative...'
+                        : selectedModel === 'gemini-3.1-flash-lite'
+                        ? 'Gemini 3.1 Flash Lite is responding rapidly...'
+                        : selectedModel === 'gemini-3.8-flash'
+                        ? 'Gemini 3.8 Flash is spinning up the multiverse...'
+                        : 'Gemini 3.5 Flash is resolving the scene narrative...'}
                     </span>
                   </div>
                 )}
