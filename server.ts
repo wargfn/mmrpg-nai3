@@ -6,6 +6,7 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
+import { randomBytes } from 'crypto';
 
 // Resolve real Gemini API key if process.env contains a placeholder
 export function resolveGeminiKey(): string {
@@ -38,7 +39,7 @@ import { characterRoster, Character, AVERAGE_PERSON_TEMPLATE, NEW_HERO_TEMPLATE 
 import { combatTracker } from './src/core/combat.ts';
 import { campaignManager } from './src/core/campaign.ts';
 import { narratorEngine, AVAILABLE_MODELS, NARRATOR_ROLES } from './src/core/narrator.ts';
-import { loadUsers, findUser, createUser, deleteUser, updatePassword, generateResetToken, resetPasswordWithToken, updateUser } from './src/core/users.ts';
+import { loadUsers, findUser, createUser, deleteUser, updateUser, passwordMatches, UserAccount } from './src/core/users.ts';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -46,6 +47,81 @@ const HOST = '0.0.0.0';
 
 app.use(cors());
 app.use(express.json());
+
+interface AuthenticatedRequest extends Request {
+  authUser?: UserAccount;
+}
+
+const SESSION_DURATION_MS = 12 * 60 * 60 * 1000;
+const sessions = new Map<string, { username: string; passwordHash: string; expiresAt: number }>();
+
+function getSessionId(req: Request): string | undefined {
+  const cookie = req.headers.cookie?.split(';').map((part) => part.trim())
+    .find((part) => part.startsWith('mmrpg_session='));
+  return cookie?.slice('mmrpg_session='.length);
+}
+
+function setSessionCookie(res: Response, sessionId: string | null) {
+  const secure = process.env.NODE_ENV === 'production' ? ' Secure;' : '';
+  const sameSite = process.env.NODE_ENV === 'production' ? 'None' : 'Strict';
+  const value = sessionId
+    ? `mmrpg_session=${sessionId}; Path=/api; HttpOnly; SameSite=${sameSite}; Max-Age=${SESSION_DURATION_MS / 1000};${secure}`
+    : `mmrpg_session=; Path=/api; HttpOnly; SameSite=${sameSite}; Max-Age=0;${secure}`;
+  res.setHeader('Set-Cookie', value);
+}
+
+function authenticateApi(req: Request, res: Response, next: () => void) {
+  const publicEndpoints = new Set([
+    '/api/auth/login',
+    '/api/auth/signup',
+    '/api/auth/request-reset',
+    '/api/auth/verify-reset',
+  ]);
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+    const origin = req.get('origin');
+    if (origin) {
+      try {
+        if (new URL(origin).host !== req.get('host')) {
+          return res.status(403).json({ error: 'Cross-origin request denied' });
+        }
+      } catch {
+        return res.status(403).json({ error: 'Invalid request origin' });
+      }
+    }
+  }
+
+  if (publicEndpoints.has(req.originalUrl.split('?')[0])) return next();
+
+  const sessionId = getSessionId(req);
+  const session = sessionId ? sessions.get(sessionId) : undefined;
+  if (!session || session.expiresAt <= Date.now()) {
+    if (sessionId) sessions.delete(sessionId);
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
+  const user = findUser(session.username);
+  if (!user || user.disabled || user.passwordHash !== session.passwordHash) {
+    sessions.delete(sessionId!);
+    setSessionCookie(res, null);
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
+  (req as AuthenticatedRequest).authUser = user;
+  next();
+}
+
+function requireAdmin(req: Request, res: Response, next: () => void) {
+  if ((req as AuthenticatedRequest).authUser?.role !== 'admin') {
+    return res.status(403).json({ error: 'Administrator access required' });
+  }
+  next();
+}
+
+app.use('/api', authenticateApi);
+app.use('/api', (_req: Request, res: Response, next: () => void) => {
+  res.setHeader('Cache-Control', 'no-store');
+  next();
+});
 
 // ----------------------------------------------------
 // 1. d616 Dice Engine APIs
@@ -1116,23 +1192,33 @@ app.post('/api/discord/token', async (req: Request, res: Response) => {
 // ----------------------------------------------------
 app.post('/api/auth/login', (req: Request, res: Response) => {
   const { username, password } = req.body;
-  if (!username || !password) {
+  if (typeof username !== 'string' || typeof password !== 'string' || !username || !password || password.length > 1024) {
     return res.status(400).json({ error: 'Username/Email and password are required' });
   }
   const user = findUser(username);
-  if (!user || user.password !== password) {
+  const validPassword = passwordMatches(password, user);
+  if (!user || !validPassword) {
     return res.status(401).json({ error: 'Invalid username/email or password' });
   }
   if (user.disabled) {
     return res.status(403).json({ error: 'Your account has been disabled by an administrator. Please contact support.' });
   }
+  const sessionId = randomBytes(32).toString('hex');
+  sessions.set(sessionId, {
+    username: user.username,
+    passwordHash: user.passwordHash,
+    expiresAt: Date.now() + SESSION_DURATION_MS,
+  });
+  setSessionCookie(res, sessionId);
   res.json({ success: true, user: { username: user.username, email: user.email, role: user.role, disabled: user.disabled } });
 });
 
 app.post('/api/auth/signup', (req: Request, res: Response) => {
   const { username, email, password } = req.body;
-  if (!username || !password) {
-    return res.status(400).json({ error: 'Username and password are required' });
+  if (typeof username !== 'string' || !username.trim() || username.trim().length > 32
+      || typeof password !== 'string' || password.length < 12 || password.length > 1024
+      || (email !== undefined && (typeof email !== 'string' || email.length > 254))) {
+    return res.status(400).json({ error: 'Enter a username (up to 32 characters) and a password of at least 12 characters.' });
   }
   const userEmail = email && email.trim() ? email.trim() : `${username.trim()}@marvel.com`;
   if (findUser(username) || findUser(userEmail)) {
@@ -1143,63 +1229,51 @@ app.post('/api/auth/signup', (req: Request, res: Response) => {
 });
 
 app.post('/api/auth/request-reset', (req: Request, res: Response) => {
-  const { usernameOrEmail } = req.body;
-  if (!usernameOrEmail) {
-    return res.status(400).json({ error: 'Username or email is required' });
-  }
-  const user = findUser(usernameOrEmail);
-  if (!user) {
-    return res.status(404).json({ error: 'User account not found with that username or email' });
-  }
-  if (user.role === 'admin' || user.username.toLowerCase() === 'admin') {
-    return res.status(403).json({ error: 'Admin password resets cannot be performed via the web UI. Please use the command line utility.' });
-  }
-  const result = generateResetToken(usernameOrEmail);
-  if (!result) {
-    return res.status(404).json({ error: 'User account not found' });
-  }
-  res.json({
-    success: true,
-    message: `Password reset instructions sent to ${result.email}`,
-    email: result.email,
-    temporaryToken: result.token,
-  });
+  res.status(501).json({ error: 'Self-service password reset is unavailable. Contact an administrator.' });
 });
 
 app.post('/api/auth/verify-reset', (req: Request, res: Response) => {
-  const { token, newPassword } = req.body;
-  if (!token || !newPassword) {
-    return res.status(400).json({ error: 'Temporary token and new password are required' });
-  }
-  const success = resetPasswordWithToken(token, newPassword);
-  if (!success) {
-    return res.status(400).json({ error: 'Invalid or expired temporary reset token/password' });
-  }
-  res.json({ success: true, message: 'Password has been reset successfully' });
+  res.status(501).json({ error: 'Self-service password reset is unavailable. Contact an administrator.' });
 });
 
-app.get('/api/users', (_req: Request, res: Response) => {
+app.get('/api/auth/session', (req: Request, res: Response) => {
+  const user = (req as AuthenticatedRequest).authUser!;
+  res.json({ user: { username: user.username, email: user.email, role: user.role } });
+});
+
+app.post('/api/auth/logout', (req: Request, res: Response) => {
+  const sessionId = getSessionId(req);
+  if (sessionId) sessions.delete(sessionId);
+  setSessionCookie(res, null);
+  res.json({ success: true });
+});
+
+app.get('/api/users', requireAdmin, (_req: Request, res: Response) => {
   const users = loadUsers().map(u => ({ username: u.username, email: u.email, role: u.role, createdAt: u.createdAt }));
   res.json({ users });
 });
 
-app.get('/api/admin/users', (_req: Request, res: Response) => {
+app.get('/api/admin/users', requireAdmin, (_req: Request, res: Response) => {
   const users = loadUsers().map(u => ({ username: u.username, email: u.email, role: u.role, createdAt: u.createdAt, disabled: !!u.disabled }));
   res.json({ users });
 });
 
-app.put('/api/admin/users/:username', (req: Request, res: Response) => {
+app.put('/api/admin/users/:username', requireAdmin, (req: Request, res: Response) => {
   const { username } = req.params;
   const uname = String(username);
   const { email, role, password, disabled } = req.body;
-  const success = updateUser(uname, { email, role, password, disabled });
-  if (!success) {
-    return res.status(404).json({ error: 'User not found' });
+  try {
+    const success = updateUser(uname, { email, role, password, disabled });
+    if (!success) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    res.json({ success: true, message: 'User updated successfully' });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
   }
-  res.json({ success: true, message: 'User updated successfully' });
 });
 
-app.delete('/api/admin/users/:username', (req: Request, res: Response) => {
+app.delete('/api/admin/users/:username', requireAdmin, (req: Request, res: Response) => {
   const { username } = req.params;
   const uname = String(username);
   if (uname.toLowerCase() === 'admin') {

@@ -114,14 +114,8 @@ interface CombatantSnapshot {
 }
 
 export default function App() {
-  const [currentUser, setCurrentUser] = useState<{ username: string; role: string } | null>(() => {
-    try {
-      const saved = localStorage.getItem('marvel_multiverse_user');
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
-  });
+  const [currentUser, setCurrentUser] = useState<{ username: string; role: string } | null>(null);
+  const [isCheckingSession, setIsCheckingSession] = useState(true);
   const [activeTab, setActiveTab] = useState<'narrator' | 'dice' | 'combat' | 'characters' | 'rules' | 'campaign' | 'users'>('narrator');
 
   // Narrator state
@@ -285,19 +279,26 @@ export default function App() {
   const [showMobileHeroModal, setShowMobileHeroModal] = useState(false);
   const [discordUser, setDiscordUser] = useState<any>(null);
 
-  if (!currentUser) {
-    return (
-      <LoginScreen
-        onLogin={(user) => {
-          setCurrentUser(user);
-          localStorage.setItem('marvel_multiverse_user', JSON.stringify(user));
-        }}
-      />
-    );
-  }
-
-  // Load initial data
   useEffect(() => {
+    let mounted = true;
+    fetch('/api/auth/session')
+      .then(async (res) => res.ok ? res.json() : null)
+      .then((data) => {
+        if (mounted) setCurrentUser(data?.user || null);
+      })
+      .catch(() => {
+        if (mounted) setCurrentUser(null);
+      })
+      .finally(() => {
+        if (mounted) setIsCheckingSession(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!currentUser) return;
     initializeDiscordSdk().then(({ user }) => {
       if (user) {
         setDiscordUser(user);
@@ -309,11 +310,23 @@ export default function App() {
     fetchCampaign();
     fetchRulesIndex();
     fetchServerCampaignFiles();
-  }, []);
+  }, [currentUser]);
 
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  if (isCheckingSession) {
+    return <div className="min-h-screen bg-slate-950" />;
+  }
+
+  if (!currentUser) {
+    return (
+      <LoginScreen
+        onLogin={(user) => setCurrentUser(user)}
+      />
+    );
+  }
 
   const fetchMessages = async () => {
     try {
@@ -1921,9 +1934,9 @@ export default function App() {
               )}
               <button
                 type="button"
-                onClick={() => {
+                onClick={async () => {
+                  await fetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined);
                   setCurrentUser(null);
-                  localStorage.removeItem('marvel_multiverse_user');
                 }}
                 className="text-slate-400 hover:text-red-400 ml-1 font-mono text-[11px] underline cursor-pointer"
                 title="Log out"
