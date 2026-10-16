@@ -1,4 +1,4 @@
-import { loadUsers, createUser, deleteUser, updatePassword } from './src/core/users.ts';
+import { loadUsers, createUser, deleteUser, updatePassword, type UserRole } from './src/core/users.ts';
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -12,7 +12,7 @@ Usage:
 
 Commands:
   list                                    List all registered user accounts (username, email, role, creation date).
-  add <username> <email> <password> [role] Create or update a user account. [role] can be 'admin' or 'player' (default: player).
+  add <username> <email> <password> [role] Create or update a user account. [role] can be 'admin', 'narrator', or 'player' (default: player).
   remove <username>                       Delete a user account by username.
   reset <username-or-email> <new-password> Set or reset the password for a specific user account by username or email.
   help                                    Display this help message and command guide.
@@ -38,7 +38,7 @@ if (!command || command === 'help' || command === '-h' || command === '--help') 
   const username = args[1];
   const email = args[2];
   const password = args[3];
-  const role = (args[4] === 'admin' ? 'admin' : 'player') as ('admin' | 'player');
+  const role = (args[4] || 'player') as UserRole;
   if (!username || !email || !password) {
     console.error('Error: Missing required arguments for "add".');
     printHelp();

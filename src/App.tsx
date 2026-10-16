@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import HomebrewRulesEditor from './components/HomebrewRulesEditor';
 import {
   Dices,
   Shield,
@@ -3490,6 +3491,14 @@ Campaign: ${campaignData?.plan?.theme || 'The Midnight Syndicate Invasion'} (Vil
         {/* TAB 5: RULES DATABASE & INDEX */}
         {activeTab === 'rules' && (
           <div className="p-6 max-w-6xl mx-auto h-full overflow-y-auto space-y-6">
+            {(currentUser.role === 'admin' || currentUser.role === 'narrator') && (
+              <HomebrewRulesEditor onSaved={async () => {
+                await fetchRulesIndex();
+                setSearchQuery('');
+                setRuleResults({ mechanicsMatches: [], powerMatches: [] });
+                setSelectedRule(null);
+              }} />
+            )}
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl space-y-6">
               {/* Header with Title and Stats Summary */}
               <div>
@@ -3503,7 +3512,7 @@ Campaign: ${campaignData?.plan?.theme || 'The Midnight Syndicate Invasion'} (Vil
                         MARVEL MULTIVERSE RULEBOOK & INDEX
                       </h2>
                       <p className="text-xs text-slate-400">
-                        Official system rules, core mechanics, powers, origins, and reference index for Marvel Multiverse RPG.
+                        Official rules plus table homebrew: mechanics, powers, origins, and reference index for Marvel Multiverse RPG.
                       </p>
                     </div>
                   </div>

@@ -4,7 +4,7 @@ import { Users, Shield, User, Mail, Key, Edit2, Trash2, Check, X, AlertCircle, A
 interface UserItem {
   username: string;
   email: string;
-  role: 'admin' | 'player';
+  role: 'admin' | 'narrator' | 'player';
   createdAt: string;
   disabled?: boolean;
 }
@@ -23,7 +23,7 @@ export function UsersManagementView({ currentUser, onBack }: UsersManagementView
   // Edit modal state
   const [editingUser, setEditingUser] = useState<UserItem | null>(null);
   const [editEmail, setEditEmail] = useState('');
-  const [editRole, setEditRole] = useState<'admin' | 'player'>('player');
+  const [editRole, setEditRole] = useState<'admin' | 'narrator' | 'player'>('player');
   const [editPassword, setEditPassword] = useState('');
   const [editDisabled, setEditDisabled] = useState(false);
 
@@ -305,10 +305,11 @@ export function UsersManagementView({ currentUser, onBack }: UsersManagementView
                 </label>
                 <select
                   value={editRole}
-                  onChange={(e) => setEditRole(e.target.value as 'admin' | 'player')}
+                  onChange={(e) => setEditRole(e.target.value as 'admin' | 'narrator' | 'player')}
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white font-mono focus:outline-none focus:border-red-500"
                 >
                   <option value="player">Player</option>
+                  <option value="narrator">Narrator</option>
                   <option value="admin">Admin</option>
                 </select>
               </div>
