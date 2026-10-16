@@ -89,7 +89,11 @@ export function mergeRules(official: RulesDocument, homebrew: RulesDocument): Ru
     }
     return [...entries.values()];
   };
-  const result: RulesDocument = { ...official, ...homebrew, mechanics: { ...official.mechanics, ...homebrew.mechanics } };
+  const mechanics = { ...official.mechanics };
+  for (const [key, item] of Object.entries(homebrew.mechanics || {})) {
+    mechanics[key] = { ...mechanics[key], ...item as RulesDocument };
+  }
+  const result: RulesDocument = { ...official, ...homebrew, mechanics };
   for (const section of listSections) {
     result[section] = mergeNamed(official[section], homebrew[section], section === 'power_sets');
   }
