@@ -42,13 +42,21 @@ To run Marvel Multiverse Narrator AI locally on your machine, follow these steps
    ```
    Open `.env` and set your configuration variables (see [Environment Configuration](#environment-configuration) below).
 
-4. **Start the development server:**
+4. **Create an administrator account:**
+   ```bash
+   npx tsx manage-users.ts add <username> <email> <password> admin
+   ```
+   Use a unique password of at least 12 characters. There are no default accounts; create the initial administrator before signing in. Passwords are stored as scrypt hashes in the local, git-ignored `users.json` file.
+
+5. **Start the development server:**
    ```bash
    npm run dev
    ```
 
-5. **Open in your browser:**
+6. **Open in your browser:**
    Navigate to `http://localhost:3000` (or the local URL provided in your terminal).
+
+All API endpoints require an authenticated account, and user administration requires the administrator role. Sessions use HttpOnly cookies and expire after 12 hours. Self-service password reset is disabled because the app has no email delivery service; administrators can reset accounts with `npx tsx manage-users.ts reset <username-or-email> <new-password>`.
 
 ---
 

@@ -1,49 +1,95 @@
 import fs from 'fs';
 import path from 'path';
+import { randomBytes, scryptSync, timingSafeEqual } from 'crypto';
 
 export interface UserAccount {
   username: string;
   email: string;
-  password: string;
+  passwordHash: string;
   role: 'admin' | 'player';
   createdAt: string;
   disabled?: boolean;
-  resetToken?: string;
-  resetTokenExpiry?: number;
 }
 
 const USERS_FILE = path.resolve('users.json');
+
+export function hashPassword(password: string): string {
+  const salt = randomBytes(16);
+  const hash = scryptSync(password, salt, 64);
+  return `scrypt$${salt.toString('hex')}$${hash.toString('hex')}`;
+}
+
+function validatePassword(password: string) {
+  if (password.length < 12 || password.length > 1024) {
+    throw new Error('Passwords must be between 12 and 1024 characters.');
+  }
+}
+
+export function verifyPassword(password: string, encodedHash: string): boolean {
+  const [algorithm, saltHex, hashHex] = encodedHash.split('$');
+  if (algorithm !== 'scrypt' || !saltHex || !hashHex || !/^[a-f0-9]+$/i.test(saltHex) || !/^[a-f0-9]+$/i.test(hashHex)) {
+    return false;
+  }
+  const salt = Buffer.from(saltHex, 'hex');
+  const expected = Buffer.from(hashHex, 'hex');
+  if (expected.length !== 64) return false;
+  const actual = scryptSync(password, salt, expected.length);
+  return timingSafeEqual(actual, expected);
+}
+
+const DUMMY_PASSWORD_HASH = hashPassword(randomBytes(32).toString('hex'));
+const DEFAULT_CREDENTIALS = new Map([
+  ['admin', 'adminpassword123'],
+  ['spider-man', 'marvel616'],
+  ['iron-man', 'starkindustries'],
+]);
 
 export function loadUsers(): UserAccount[] {
   try {
     if (fs.existsSync(USERS_FILE)) {
       const data = fs.readFileSync(USERS_FILE, 'utf-8');
-      const users = JSON.parse(data);
-      if (Array.isArray(users) && users.length > 0) {
-        return users.map((u: any) => ({
-          ...u,
-          email: u.email || `${u.username}@marvel.com`,
-          disabled: !!u.disabled,
-        }));
+      const storedUsers = JSON.parse(data);
+      if (Array.isArray(storedUsers)) {
+        let changed = false;
+        const users = storedUsers.flatMap((stored: any): UserAccount[] => {
+          const defaultPassword = DEFAULT_CREDENTIALS.get(String(stored.username).toLowerCase());
+          if (typeof stored.password === 'string' && stored.password === defaultPassword) {
+            changed = true;
+            return [];
+          }
+
+          const passwordHash = typeof stored.passwordHash === 'string'
+            ? stored.passwordHash
+            : typeof stored.password === 'string'
+              ? hashPassword(stored.password)
+              : '';
+          if (!stored.passwordHash || stored.password !== undefined || stored.resetToken !== undefined || stored.resetTokenExpiry !== undefined) {
+            changed = true;
+          }
+          const { password: _password, resetToken: _resetToken, resetTokenExpiry: _resetTokenExpiry, ...account } = stored;
+          return [{
+            ...account,
+            username: String(stored.username || ''),
+            email: stored.email || `${stored.username}@marvel.com`,
+            passwordHash,
+            disabled: !!stored.disabled,
+          }];
+        });
+        if (changed) saveUsers(users);
+        return users;
       }
     }
   } catch (e) {
     console.error('Error loading users.json:', e);
   }
 
-  // Default initial users
-  const defaultUsers: UserAccount[] = [
-    { username: 'admin', email: 'admin@marvel.com', password: 'adminpassword123', role: 'admin', createdAt: new Date().toISOString(), disabled: false },
-    { username: 'spider-man', email: 'spiderman@marvel.com', password: 'marvel616', role: 'player', createdAt: new Date().toISOString(), disabled: false },
-    { username: 'iron-man', email: 'ironman@stark.com', password: 'starkindustries', role: 'player', createdAt: new Date().toISOString(), disabled: false },
-  ];
-  saveUsers(defaultUsers);
-  return defaultUsers;
+  return [];
 }
 
 export function saveUsers(users: UserAccount[]) {
   try {
-    fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf-8');
+    fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), { encoding: 'utf-8', mode: 0o600 });
+    fs.chmodSync(USERS_FILE, 0o600);
   } catch (e) {
     console.error('Error saving users.json:', e);
   }
@@ -56,12 +102,13 @@ export function findUser(usernameOrEmail: string): UserAccount | undefined {
 }
 
 export function createUser(username: string, email: string, password: string, role: 'admin' | 'player' = 'player'): UserAccount {
+  validatePassword(password);
   const users = loadUsers();
   const existing = users.findIndex(u => u.username.toLowerCase() === username.toLowerCase());
   const newUser: UserAccount = {
     username: username.trim(),
     email: email.trim(),
-    password: password,
+    passwordHash: hashPassword(password),
     role,
     createdAt: new Date().toISOString(),
     disabled: false,
@@ -87,14 +134,13 @@ export function deleteUser(username: string): boolean {
 }
 
 export function updatePassword(usernameOrEmail: string, newPassword: string): boolean {
+  validatePassword(newPassword);
   const users = loadUsers();
   const query = usernameOrEmail.toLowerCase().trim();
   const user = users.find(u => u.username.toLowerCase() === query || u.email.toLowerCase() === query);
   if (user) {
     if (user.disabled) return false;
-    user.password = newPassword;
-    user.resetToken = undefined;
-    user.resetTokenExpiry = undefined;
+    user.passwordHash = hashPassword(newPassword);
     saveUsers(users);
     return true;
   }
@@ -102,6 +148,7 @@ export function updatePassword(usernameOrEmail: string, newPassword: string): bo
 }
 
 export function updateUser(username: string, updates: { email?: string; role?: 'admin' | 'player'; password?: string; disabled?: boolean }): boolean {
+  if (updates.password !== undefined && updates.password.trim() !== '') validatePassword(updates.password);
   const users = loadUsers();
   const user = users.find(u => u.username.toLowerCase() === username.toLowerCase());
   if (!user) return false;
@@ -109,49 +156,12 @@ export function updateUser(username: string, updates: { email?: string; role?: '
   if (updates.role !== undefined) user.role = updates.role;
   if (updates.disabled !== undefined) user.disabled = updates.disabled;
   if (updates.password !== undefined && updates.password.trim() !== '') {
-    user.password = updates.password;
-    user.resetToken = undefined;
-    user.resetTokenExpiry = undefined;
+    user.passwordHash = hashPassword(updates.password);
   }
   saveUsers(users);
   return true;
 }
 
-export function generateResetToken(usernameOrEmail: string): { token: string; email: string; username: string } | null {
-  const users = loadUsers();
-  const query = usernameOrEmail.toLowerCase().trim();
-  const user = users.find(u => u.username.toLowerCase() === query || u.email.toLowerCase() === query);
-  if (!user || user.disabled) return null;
-
-  if (user.role === 'admin' || user.username.toLowerCase() === 'admin') {
-    return null; // Prevent admin token generation
-  }
-
-  // Generate temporary reset token
-  const token = Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2, 8);
-  user.resetToken = token;
-  user.resetTokenExpiry = Date.now() + 15 * 60 * 1000; // 15 mins
-  saveUsers(users);
-
-  return { token, email: user.email, username: user.username };
-}
-
-export function resetPasswordWithToken(token: string, newPassword: string): boolean {
-  const users = loadUsers();
-  const user = users.find(u => u.resetToken === token);
-  if (!user || user.disabled) return false;
-
-  if (user.role === 'admin' || user.username.toLowerCase() === 'admin') {
-    return false; // Prevent admin reset via token
-  }
-
-  if (user.resetTokenExpiry && Date.now() > user.resetTokenExpiry) {
-    return false; // Expired
-  }
-
-  user.password = newPassword;
-  user.resetToken = undefined;
-  user.resetTokenExpiry = undefined;
-  saveUsers(users);
-  return true;
+export function passwordMatches(password: string, user?: UserAccount): boolean {
+  return verifyPassword(password, user?.passwordHash || DUMMY_PASSWORD_HASH) && !!user;
 }
