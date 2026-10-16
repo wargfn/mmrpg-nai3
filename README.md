@@ -58,6 +58,66 @@ To run Marvel Multiverse Narrator AI locally on your machine, follow these steps
 
 All API endpoints require an authenticated account, and user administration requires the administrator role. Sessions use HttpOnly cookies and expire after 12 hours. Self-service password reset is disabled because the app has no email delivery service; administrators can reset accounts with `npx tsx manage-users.ts reset <username-or-email> <new-password>`.
 
+## Homebrew and Official Rules Management
+
+Administrators can assign the **narrator** account role in user management or with
+`npx tsx manage-users.ts add <username> <email> <password> narrator`.
+Narrators and administrators can open **Rules → Manage homebrew rules** to add,
+edit, or remove mechanics, powers, origins, occupations, traits, and tags.
+Add or update each draft rule, then select **Save homebrew** to publish the draft.
+The advanced JSON editor supports power sets and additional fields such as
+formulas, examples, prerequisites, and rank requirements. Players have read-only
+access to the effective rules through the existing catalog and lookup APIs.
+
+Homebrew is shared across the entire application, not isolated per campaign.
+Mechanics override official entries by exact key; named entries override by
+case-insensitive, trimmed name within their section. Power sets merge their powers
+by name within the matching set. Keep power overrides in the same section/set as
+the official entry. Other optional fields are retained when omitted from an override.
+Removing an override restores the official entry; saving `{}` clears all homebrew.
+Changes immediately refresh the catalog, search, and narrator rule references
+without a server restart. Previously generated chat messages are unchanged.
+
+### Backend official-rules updates
+
+The server provides authenticated JSON endpoints:
+
+| Endpoint | Permission | Purpose |
+| --- | --- | --- |
+| `GET /api/rules/homebrew` | Narrator/admin | Export the homebrew document |
+| `PUT /api/rules/homebrew` | Narrator/admin | Replace homebrew with a partial rules document |
+| `GET /api/rules/official` | Admin | Export/back up the current official document |
+| `PUT /api/rules/official` | Admin | Replace the official document without changing homebrew |
+
+To update official rules, export a backup first, then PUT an updated JSON document
+using an administrator session cookie. For example, with an authenticated curl
+cookie jar:
+
+```bash
+curl --fail --cookie cookies.txt \
+  http://localhost:3000/api/rules/official --output official-backup.json
+curl --fail --cookie cookies.txt --request PUT \
+  --header 'Content-Type: application/json' \
+  --data-binary @updated-rules.json http://localhost:3000/api/rules/official
+```
+
+The official document must include `mechanics` (an object keyed by rule ID) and
+the arrays `powers`, `power_sets`, `origins`, `occupations`, `traits`, and `tags`;
+`occupation_rules` is an optional object. Use the exported document or
+`src/data/rules.json` as the format reference. Mechanics require a non-empty title
+and description; array entries require a non-empty name. Optional text fields
+must be strings, and examples/prerequisites must be string arrays. Invalid documents
+return HTTP 400, unauthorized roles return 403, and requests over 1 MB return 413.
+Both PUT operations replace their entire layer, so retain any entries you want
+to keep. Coordinate simultaneous edits to avoid overwriting another narrator's draft.
+
+On first startup, official rules come from the bundled `src/data/rules.json`.
+After the first rules save, both layers persist atomically in the git-ignored
+`rules-state.json` in the server's working directory. Back up this file and keep
+that directory writable and on persistent storage. Later official updates must
+use the API; replacing the bundled file alone does not replace a saved official
+snapshot. A failed validation or disk write leaves the active rules unchanged.
+
 ---
 
 ## Environment Configuration

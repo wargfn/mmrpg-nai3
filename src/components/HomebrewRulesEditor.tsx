@@ -47,6 +47,7 @@ export default function HomebrewRulesEditor({ onSaved }: { onSaved: () => Promis
     entries = section === 'mechanics'
       ? Object.entries(document.mechanics || {})
       : (document[section] || []).map((entry: any) => [entry.name, entry]);
+    entries = entries.filter(([id, entry]) => typeof id === 'string' && entry && typeof entry === 'object');
   } catch {}
 
   function clearForm() {
@@ -155,8 +156,8 @@ export default function HomebrewRulesEditor({ onSaved }: { onSaved: () => Promis
           </button>
           {editing !== null && <>
             <button type="button" className="rounded bg-red-900 px-3 py-2 text-sm text-white" onClick={() => changeEntry(true)}>Remove from draft</button>
-            <button type="button" className="px-3 py-2 text-sm text-slate-300" onClick={clearForm}>Cancel edit</button>
           </>}
+          <button type="button" className="px-3 py-2 text-sm text-slate-300" onClick={clearForm}>Cancel edit</button>
         </div>
         <details>
           <summary className="cursor-pointer text-sm text-slate-300">Advanced JSON (all sections, power sets, and optional fields)</summary>
