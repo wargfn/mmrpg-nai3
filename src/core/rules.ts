@@ -42,7 +42,13 @@ class RulesDatabaseService {
   private lookupIndex: Map<string, RuleLookupResult> = new Map();
 
   constructor() {
-    this.data = rulesData;
+    this.replaceData(rulesData);
+  }
+
+  public replaceData(data: any) {
+    this.data = data;
+    this.powerEntries = [];
+    this.lookupIndex.clear();
     this.initPowerEntries();
     this.buildLookupIndex();
   }

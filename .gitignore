@@ -156,6 +156,9 @@ activemq-data/
 .envrc
 .venv
 users.json
+rules-state.json
+rules-state.json.*.tmp
+node_modules/
 env/
 venv/
 ENV/

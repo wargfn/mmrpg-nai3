@@ -2,11 +2,13 @@ import fs from 'fs';
 import path from 'path';
 import { randomBytes, scryptSync, timingSafeEqual } from 'crypto';
 
+export type UserRole = 'admin' | 'narrator' | 'player';
+
 export interface UserAccount {
   username: string;
   email: string;
   passwordHash: string;
-  role: 'admin' | 'player';
+  role: UserRole;
   createdAt: string;
   disabled?: boolean;
 }
@@ -101,7 +103,12 @@ export function findUser(usernameOrEmail: string): UserAccount | undefined {
   return users.find(u => u.username.toLowerCase() === query || u.email.toLowerCase() === query);
 }
 
-export function createUser(username: string, email: string, password: string, role: 'admin' | 'player' = 'player'): UserAccount {
+function validateRole(role: string) {
+  if (!['admin', 'narrator', 'player'].includes(role)) throw new Error('Invalid user role.');
+}
+
+export function createUser(username: string, email: string, password: string, role: UserRole = 'player'): UserAccount {
+  validateRole(role);
   validatePassword(password);
   const users = loadUsers();
   const existing = users.findIndex(u => u.username.toLowerCase() === username.toLowerCase());
@@ -147,7 +154,8 @@ export function updatePassword(usernameOrEmail: string, newPassword: string): bo
   return false;
 }
 
-export function updateUser(username: string, updates: { email?: string; role?: 'admin' | 'player'; password?: string; disabled?: boolean }): boolean {
+export function updateUser(username: string, updates: { email?: string; role?: UserRole; password?: string; disabled?: boolean }): boolean {
+  if (updates.role !== undefined) validateRole(updates.role);
   if (updates.password !== undefined && updates.password.trim() !== '') validatePassword(updates.password);
   const users = loadUsers();
   const user = users.find(u => u.username.toLowerCase() === username.toLowerCase());

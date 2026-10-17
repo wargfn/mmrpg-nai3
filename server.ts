@@ -35,6 +35,7 @@ export function resolveGeminiKey(): string {
 resolveGeminiKey();
 import { resolveD616Roll, buildD616Result } from './src/core/d616.ts';
 import { rulesDatabase } from './src/core/rules.ts';
+import { RulesStore, RulesValidationError } from './src/core/rules-store.ts';
 import { characterRoster, Character, AVERAGE_PERSON_TEMPLATE, NEW_HERO_TEMPLATE } from './src/core/character.ts';
 import { combatTracker } from './src/core/combat.ts';
 import { campaignManager } from './src/core/campaign.ts';
@@ -44,8 +45,11 @@ import { loadUsers, findUser, createUser, deleteUser, updateUser, passwordMatche
 const app = express();
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const HOST = '0.0.0.0';
+const rulesStore = new RulesStore();
+rulesDatabase.replaceData(rulesStore.effective());
 
 app.use(cors());
+app.use('/api/rules', express.json({ limit: '1mb' }));
 app.use(express.json());
 
 interface AuthenticatedRequest extends Request {
@@ -117,10 +121,48 @@ function requireAdmin(req: Request, res: Response, next: () => void) {
   next();
 }
 
+function requireNarrator(req: Request, res: Response, next: () => void) {
+  const role = (req as AuthenticatedRequest).authUser?.role;
+  if (role !== 'admin' && role !== 'narrator') {
+    return res.status(403).json({ error: 'Narrator or administrator access required' });
+  }
+  next();
+}
+
 app.use('/api', authenticateApi);
 app.use('/api', (_req: Request, res: Response, next: () => void) => {
   res.setHeader('Cache-Control', 'no-store');
   next();
+});
+
+app.get('/api/rules/homebrew', requireNarrator, (_req: Request, res: Response) => {
+  res.json(rulesStore.get('homebrew'));
+});
+
+app.get('/api/rules/official', requireAdmin, (_req: Request, res: Response) => {
+  res.json(rulesStore.get('official'));
+});
+
+function replaceRules(layer: 'official' | 'homebrew', req: Request, res: Response) {
+  try {
+    rulesStore.replace(layer, req.body);
+    rulesDatabase.replaceData(rulesStore.effective());
+    res.json({ success: true, stats: rulesDatabase.getRulesIndex().stats });
+  } catch (err) {
+    if (err instanceof RulesValidationError) {
+      return res.status(400).json({ error: err.message });
+    }
+    console.error('Unable to save rules:', err);
+    res.status(500).json({ error: 'Unable to save rules. Existing rules have not been changed.' });
+  }
+}
+
+app.put('/api/rules/homebrew', requireNarrator, (req: Request, res: Response) => {
+  replaceRules('homebrew', req, res);
+});
+
+app.put('/api/rules/official', requireAdmin, (req: Request, res: Response) => {
+  replaceRules('official', req, res);
 });
 
 // ----------------------------------------------------
